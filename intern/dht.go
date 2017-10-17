@@ -80,8 +80,6 @@ func (this *DHT) AddFriendC(pubkey *C.uint8_t, ipcbfn *[0]byte, data unsafe.Poin
 func (this *DHT) DelFriend() {}
 
 func (this *DHT) GetFriendIP(pubkey string) (ip string, port uint16) {
-	// int DHT_getfriendip(const DHT *dht, const uint8_t *public_key, IP_Port *ip_port);
-
 	pubkey_ := [C.TOX_PUBLIC_KEY_SIZE]byte{}
 	str2ppkey(pubkey, (*C.uint8_t)(&pubkey_[0]))
 	var ip_port C.IP_Port
@@ -97,7 +95,7 @@ func (this *DHT) GetFriendIP(pubkey string) (ip string, port uint16) {
 		port = net_to_host(uint16(ip_port.port))
 	}
 
-	if true {
+	if false {
 		friendo := addrStep(unsafe.Pointer(this.dht.friends_list), 2*C.sizeof_DHT_Friend)
 		friendo_ := (*C.DHT_Friend)(friendo)
 		pk_ := ppkey2str(&friendo_.public_key[0])
@@ -250,16 +248,34 @@ func onGetnodesResponse(ip_port *C.IP_Port, pubkey *C.uint8_t, ud unsafe.Pointer
 	}
 }
 
+///
 type ClientData struct {
 	cd *C.Client_data
 }
 
+func NewClientDataFrom(cd *C.Client_data) *ClientData {
+	return &ClientData{cd}
+}
+
+func (this *ClientData) PublicKey() string {
+	return ppkey2str((*C.uint8_t)(&this.cd.public_key[0]))
+}
+func (this *ClientData) Host() string {
+	ip := ip_ntoa(&this.cd.assoc4.ip_port.ip) // FIXME: maybe crash
+	port := net_to_host(uint16(this.cd.assoc4.ip_port.port))
+	if ip == "" {
+		return ip
+	}
+	return fmt.Sprintf("%s:%d", ip, port)
+}
+
+//////////
 type ClientDataList struct {
-	cds **C.Client_data
+	cds *C.Client_data
 	len int
 }
 
-func NewClientDataListFrom(cds **C.Client_data, len int) *ClientDataList {
+func NewClientDataListFrom(cds *C.Client_data, len int) *ClientDataList {
 	this := &ClientDataList{cds, len}
 	return this
 }
@@ -283,7 +299,7 @@ func str2ppkey(pubkey string, key *C.uint8_t) {
 	C.memcpy(unsafe.Pointer(key), unsafe.Pointer(&keybin[0]), C.TOX_PUBLIC_KEY_SIZE)
 }
 
-func (this *ClientDataList) Count() (cnt int) {
+func (this *ClientDataList) CountR() (cnt int) {
 	for idx := 0; idx < this.len; idx++ {
 		cdx := addrStep(unsafe.Pointer(this.cds), idx*C.sizeof_Client_data)
 		cd := (*C.Client_data)(cdx)
@@ -294,12 +310,31 @@ func (this *ClientDataList) Count() (cnt int) {
 	}
 	return
 }
+func (this *ClientDataList) CountA() (cnt int) { return this.len }
+func (this *ClientDataList) Index(n int) *ClientData {
+	cdx := addrStep(unsafe.Pointer(this.cds), n*C.sizeof_Client_data)
+	cd := (*C.Client_data)(cdx)
+	return NewClientDataFrom(cd)
+}
 
 //////////////
 type DHTFriend struct {
 	f *C.DHT_Friend
 }
 
+func NewDHTFriendFrom(f *C.DHT_Friend) *DHTFriend {
+	return &DHTFriend{f}
+}
+
+func (this *DHTFriend) GetClientDataList() *ClientDataList {
+	return NewClientDataListFrom((*C.Client_data)((unsafe.Pointer)(&this.f.client_list[0])), C.MAX_FRIEND_CLIENTS)
+}
+
+func (this *DHTFriend) GetToBootstrap() *NodeFormatList {
+	return NewNodeFormatList((*C.Node_format)((unsafe.Pointer)(&this.f.to_bootstrap[0])), int(this.f.num_to_bootstrap))
+}
+
+///
 type DHTFriendList struct {
 	frs *C.DHT_Friend
 	num int
@@ -308,6 +343,13 @@ type DHTFriendList struct {
 func NewDHTFriendListFrom(frs *C.DHT_Friend, num C.uint16_t) *DHTFriendList {
 	this := &DHTFriendList{frs, int(num)}
 	return this
+}
+
+func (this *DHTFriendList) Count() int { return this.num }
+func (this *DHTFriendList) Index(idx int) *DHTFriend {
+	px := addrStep(unsafe.Pointer(this.frs), idx*C.sizeof_DHT_Friend)
+	ptr := (*C.DHT_Friend)(px)
+	return NewDHTFriendFrom(ptr)
 }
 
 ////////////////
@@ -397,5 +439,7 @@ func NewNodeFormatList(nfs *C.Node_format, num int) *NodeFormatList {
 	this := &NodeFormatList{nfs, num}
 	return this
 }
+
+func (this *NodeFormatList) Count() int { return this.num }
 
 ///////////

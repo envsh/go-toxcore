@@ -6,6 +6,7 @@ package toxin
 import "C"
 import (
 	"log"
+	"strings"
 	"unsafe"
 )
 
@@ -51,7 +52,12 @@ func ip_ntoa(ip *C.IP) string {
 		log.Println(err)
 		return ""
 	}
-	return C.GoString(ip_str_c)
+	ret := C.GoString(ip_str_c)
+	// fix: (IP invalid, family 0)
+	if strings.Index(ret, "IP invalid") > 0 {
+		return ""
+	}
+	return ret
 }
 
 func addr_parse_ip(address string, ip *C.IP) int {

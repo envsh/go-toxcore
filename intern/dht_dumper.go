@@ -70,7 +70,7 @@ func (this *DHT) Dump() {
 	log.Println("loaded_nodes_index:", this.dht.loaded_nodes_index)
 	log.Println("last_run:", this.dht.last_run, time.Unix(int64(this.dht.last_run), 0))
 	log.Println("num_to_bootstrap:", this.dht.num_to_bootstrap)
-	log.Println("num_close_clientlist:", NewClientDataListFrom((**C.Client_data)((unsafe.Pointer)(&this.dht.close_clientlist)), C.LCLIENT_LIST).Count())
+	log.Println("num_close_clientlist:", NewClientDataListFrom((*C.Client_data)((unsafe.Pointer)(&this.dht.close_clientlist)), C.LCLIENT_LIST).CountR())
 	log.Println("dht size:", this.Size())
 	NewDHTFriendListFrom(this.dht.friends_list, this.dht.num_friends).Dump()
 
@@ -154,9 +154,9 @@ func (this *DHTFriendList) Dump() {
 			log.Println(i, fi.num_to_bootstrap, pubkey)
 		}
 
-		cds := NewClientDataListFrom((**C.Client_data)((unsafe.Pointer)(&fi.client_list)), C.MAX_FRIEND_CLIENTS)
+		cds := NewClientDataListFrom((*C.Client_data)((unsafe.Pointer)(&fi.client_list)), C.MAX_FRIEND_CLIENTS)
 		if false {
-			log.Println(i, cds.Count())
+			log.Println(i, cds.CountR())
 			cds.Dump()
 		}
 		this.DumpBootstrapNodes()
