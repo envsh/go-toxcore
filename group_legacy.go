@@ -140,7 +140,12 @@ func (this *Tox) CountChatList() uint32 {
 }
 
 func (this *Tox) GetChatList() []int32 {
-	return this.ConferenceGetChatlist()
+	gns := this.ConferenceGetChatlist()
+	var ret []int32
+	for _, gn := range gns {
+		ret = append(ret, int32(gn))
+	}
+	return ret
 }
 
 func (this *Tox) GroupGetType(groupNumber uint32) (int, error) {

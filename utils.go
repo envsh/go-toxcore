@@ -1,10 +1,19 @@
 package tox
 
-import "errors"
-import "fmt"
-import "io/ioutil"
-import "os"
-import "bytes"
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"reflect"
+	"unsafe"
+)
+
+func safeptr(b []byte) unsafe.Pointer {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	return unsafe.Pointer(h.Data)
+}
 
 func toxerr(errno interface{}) error {
 	return errors.New(fmt.Sprintf("toxcore error: %v", errno))

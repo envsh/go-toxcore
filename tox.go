@@ -914,7 +914,7 @@ func (this *Tox) SelfGetName() string {
 	nlen := C.tox_self_get_name_size(this.toxcore)
 	_name := make([]byte, nlen)
 
-	C.tox_self_get_name(this.toxcore, (*C.uint8_t)(&_name[0]))
+	C.tox_self_get_name(this.toxcore, (*C.uint8_t)(safeptr(_name)))
 	return string(_name)
 }
 
@@ -925,7 +925,7 @@ func (this *Tox) FriendGetName(friendNumber uint32) (string, error) {
 	nlen := C.tox_friend_get_name_size(this.toxcore, _fn, &cerr)
 	_name := make([]byte, nlen)
 
-	r := C.tox_friend_get_name(this.toxcore, _fn, (*C.uint8_t)(&_name[0]), &cerr)
+	r := C.tox_friend_get_name(this.toxcore, _fn, (*C.uint8_t)(safeptr(_name)), &cerr)
 	if !bool(r) {
 		return "", toxerr(cerr)
 	}
@@ -995,7 +995,7 @@ func (this *Tox) FriendGetStatusMessage(friendNumber uint32) (string, error) {
 	_buf := make([]byte, len)
 
 	cerr = 0
-	r := C.tox_friend_get_status_message(this.toxcore, _fn, (*C.uint8_t)(&_buf[0]), &cerr)
+	r := C.tox_friend_get_status_message(this.toxcore, _fn, (*C.uint8_t)(safeptr(_buf)), &cerr)
 	if !bool(r) || cerr > 0 {
 		return "", toxerr(cerr)
 	}
@@ -1006,7 +1006,7 @@ func (this *Tox) SelfGetStatusMessage() (string, error) {
 	nlen := C.tox_self_get_status_message_size(this.toxcore)
 	var _buf = make([]byte, nlen)
 
-	C.tox_self_get_status_message(this.toxcore, (*C.uint8_t)(&_buf[0]))
+	C.tox_self_get_status_message(this.toxcore, (*C.uint8_t)(safeptr(_buf)))
 	return string(_buf[:]), nil
 }
 

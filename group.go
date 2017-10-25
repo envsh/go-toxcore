@@ -427,9 +427,9 @@ func (this *Tox) ConferenceGetChatlistSize() uint32 {
 	return uint32(r)
 }
 
-func (this *Tox) ConferenceGetChatlist() []int32 {
+func (this *Tox) ConferenceGetChatlist() []uint32 {
 	var sz uint32 = this.ConferenceGetChatlistSize()
-	vec := make([]int32, sz)
+	vec := make([]uint32, sz)
 	if sz == 0 {
 		return vec
 	}
