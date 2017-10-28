@@ -219,14 +219,20 @@ func (this *Tox) ConferenceNew() (uint32, error) {
 
 func (this *Tox) ConferenceDelete(groupNumber uint32) (int, error) {
 	this.lock()
-	defer this.unlock()
 
 	var _gn = C.uint32_t(groupNumber)
 	var cerr C.TOX_ERR_CONFERENCE_DELETE
 	r := C.tox_conference_delete(this.toxcore, _gn, &cerr)
 	if bool(r) == false {
+		this.unlock()
 		return 1, toxerrf("delete group chat failed:%d", cerr)
 	}
+	this.unlock()
+
+	if this.hooks.ConferenceDelete != nil {
+		this.hooks.ConferenceDelete(groupNumber)
+	}
+
 	return 0, nil
 }
 
@@ -244,7 +250,7 @@ func (this *Tox) ConferencePeerGetName(groupNumber uint32, peerNumber uint32) (s
 	return string(_name[:bytes.IndexRune(_name[:], 0)]), nil
 }
 
-func (this *Tox) ConferencePeerGetPublicKey(groupNumber uint32, peerNumber int) (string, error) {
+func (this *Tox) ConferencePeerGetPublicKey(groupNumber uint32, peerNumber uint32) (string, error) {
 	var _gn = C.uint32_t(groupNumber)
 	var _pn = C.uint32_t(peerNumber)
 	var _pubkey [PUBLIC_KEY_SIZE]byte
@@ -284,11 +290,10 @@ func (this *Tox) ConferenceInvite(friendNumber uint32, groupNumber uint32) (int,
 
 func (this *Tox) ConferenceJoin(friendNumber uint32, data []byte) (uint32, error) {
 	this.lock()
-	defer this.unlock()
-
 	var length = len(data)
 
 	if data == nil || length < 10 {
+		defer this.unlock()
 		return 0, errors.New("invalid data")
 	}
 
@@ -298,8 +303,15 @@ func (this *Tox) ConferenceJoin(friendNumber uint32, data []byte) (uint32, error
 	var cerr C.TOX_ERR_CONFERENCE_JOIN
 	r := C.tox_conference_join(this.toxcore, _fn, (*C.uint8_t)(&data[0]), _length, &cerr)
 	if r == C.UINT32_MAX {
+		defer this.unlock()
 		return uint32(r), toxerrf("join group chat failed: %d", cerr)
 	}
+	defer this.unlock()
+
+	if this.hooks.ConferenceJoin != nil {
+		this.hooks.ConferenceJoin(friendNumber, uint32(r), data)
+	}
+
 	return uint32(r), nil
 }
 
@@ -393,7 +405,7 @@ func (this *Tox) ConferenceGetNames(groupNumber uint32) []string {
 func (this *Tox) ConferenceGetPeerPubkeys(groupNumber uint32) []string {
 	vec := make([]string, 0)
 	peerCount := this.ConferencePeerCount(groupNumber)
-	for peerNumber := 0; peerNumber < C.UINT32_MAX; peerNumber++ {
+	for peerNumber := uint32(0); peerNumber < C.UINT32_MAX; peerNumber++ {
 		pubkey, err := this.ConferencePeerGetPublicKey(groupNumber, peerNumber)
 		if err != nil {
 		} else {
@@ -406,10 +418,10 @@ func (this *Tox) ConferenceGetPeerPubkeys(groupNumber uint32) []string {
 	return vec
 }
 
-func (this *Tox) ConferenceGetPeers(groupNumber uint32) map[int]string {
-	vec := make(map[int]string, 0)
+func (this *Tox) ConferenceGetPeers(groupNumber uint32) map[uint32]string {
+	vec := make(map[uint32]string, 0)
 	peerCount := this.ConferencePeerCount(groupNumber)
-	for peerNumber := 0; peerNumber < C.UINT32_MAX; peerNumber++ {
+	for peerNumber := uint32(0); peerNumber < C.UINT32_MAX; peerNumber++ {
 		pubkey, err := this.ConferencePeerGetPublicKey(groupNumber, peerNumber)
 		if err != nil {
 		} else {

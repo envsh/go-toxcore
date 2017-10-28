@@ -185,6 +185,8 @@ type Tox struct {
 
 	cb_iterate_data              interface{}
 	cb_conference_message_setted bool
+
+	hooks callHookMethods
 }
 
 var cbUserDatas = newUserData()

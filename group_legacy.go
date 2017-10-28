@@ -85,7 +85,7 @@ func (this *Tox) GroupPeerName(groupNumber int, peerNumber int) (string, error) 
 }
 
 func (this *Tox) GroupPeerPubkey(groupNumber int, peerNumber int) (string, error) {
-	return this.ConferencePeerGetPublicKey(uint32(groupNumber), peerNumber)
+	return this.ConferencePeerGetPublicKey(uint32(groupNumber), uint32(peerNumber))
 }
 
 func (this *Tox) InviteFriend(friendNumber uint32, groupNumber int) (int, error) {
@@ -132,7 +132,12 @@ func (this *Tox) GroupGetPeerPubkeys(groupNumber int) []string {
 }
 
 func (this *Tox) GroupGetPeers(groupNumber int) map[int]string {
-	return this.ConferenceGetPeers(uint32(groupNumber))
+	peers := this.ConferenceGetPeers(uint32(groupNumber))
+	rets := make(map[int]string, 0)
+	for pn, name := range peers {
+		rets[int(pn)] = name
+	}
+	return rets
 }
 
 func (this *Tox) CountChatList() uint32 {
