@@ -5,11 +5,13 @@ features:
 [x] auto reconnect if disconnected
 [x] auto context account info
 [x] auto save/load account info
-[ ] auto bootstrap
+[x] auto bootstrap
 [ ] auto switch bootstrap nodes
-[x] distingest self created group and invited group
+[x] distinguish self created group and invited group
 [ ] event interface for callbacks replacement
 [ ] with text error message
+[x] duplicate title info of groups
+[x] duplicate peer info of groups
 */
 // //go:generate ./getnodes.sh
 package xtox
@@ -76,6 +78,7 @@ type _XTox struct {
 	invitedGroups  *hashmap.Map
 	groupPeerKeys  *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => pubkey
 	groupPeerNames *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => name
+	groupTitles    *hashmap.Map // uint32 => string, group number => group title
 	needReconn     int32
 }
 
@@ -111,6 +114,7 @@ func newXTox() *_XTox {
 	xt.invitedGroups = hashmap.New()
 	xt.groupPeerKeys = hashmap.New()
 	xt.groupPeerNames = hashmap.New()
+	xt.groupTitles = hashmap.New()
 	xt.ctx = NewToxContext("toxsave.bin", "xtoxuser", "xtoxuser!!!")
 	return xt
 }
@@ -160,30 +164,50 @@ func (this *_XTox) initCallbacks() {
 			pubkey, err := t.ConferencePeerGetPublicKey(groupNumber, peerNumber)
 			if err == nil {
 				// assert found == true
-				peerKeysx, _ := this.groupPeerKeys.Get(groupNumber)
+				peerKeysx, found := this.groupPeerKeys.Get(groupNumber)
+				if !found {
+					peerKeysx = hashmap.New()
+					this.groupPeerKeys.Put(groupNumber, peerKeysx)
+				}
+
 				peerKeysx.(*hashmap.Map).Put(peerNumber, pubkey)
+			} else {
+				log.Println(err, groupNumber, peerNumber)
 			}
 			peerName, err := t.ConferencePeerGetName(groupNumber, peerNumber)
 			if err == nil {
-				peerNamesx, _ := this.groupPeerNames.Get(groupNumber)
-				peerNamesx.(*hashmap.Map).Put(peerNumber, peerName)
+				peerNamesx, found := this.groupPeerNames.Get(groupNumber)
+				if !found {
+					peerNamesx = hashmap.New()
+					this.groupPeerNames.Put(groupNumber, peerNamesx)
+				}
+
+				peerNamesx.(*hashmap.Map).Put(groupNumber, peerName)
+			} else {
+				log.Println(err, groupNumber, peerNumber)
 			}
 		}
+	}, nil)
+	t.CallbackConferenceTitleAdd(func(_ *tox.Tox, groupNumber uint32, peerNumber uint32, title string, userData interface{}) {
+		this.groupTitles.Put(groupNumber, title)
+		// log.Println("set group title:", groupNumber, title)
 	}, nil)
 }
 
 func (this *_XTox) initHooks() {
 	t := this.t
 	t.HookConferenceJoin(func(friendNumber uint32, groupNumber uint32, data []byte) {
+		// 刚join的时候无法获取title
 		if !this.groupPeerKeys.Has(groupNumber) {
 			this.groupPeerKeys.Put(groupNumber, hashmap.New())
 		} else {
-			this.groupPeerKeys.Put(groupNumber, hashmap.New()) // 这时再清空比较好
+			// this.groupPeerKeys.Put(groupNumber, hashmap.New()) // 这时再清空比较好
+			// 这里不能清空。由于时序问题，可能先收到NameListChanged回调
 		}
 		if !this.groupPeerNames.Has(groupNumber) {
 			this.groupPeerNames.Put(groupNumber, hashmap.New())
 		} else {
-			this.groupPeerNames.Put(groupNumber, hashmap.New()) // 这时再清空比较好
+			// this.groupPeerNames.Put(groupNumber, hashmap.New()) // 这时再清空比较好
 		}
 		hdata := hex.EncodeToString(data)
 		this.invitedGroups.Put(groupNumber, hdata)
@@ -191,5 +215,29 @@ func (this *_XTox) initHooks() {
 	})
 	t.HookConferenceDelete(func(groupNumber uint32) {
 		this.invitedGroups.Remove(groupNumber)
+	})
+	t.HookConferenceNew(func(groupNumber uint32) {
+		if !this.groupPeerKeys.Has(groupNumber) {
+			this.groupPeerKeys.Put(groupNumber, hashmap.New())
+		} else {
+			this.groupPeerKeys.Put(groupNumber, hashmap.New()) // 这时再清空比较好
+		}
+		if valuex, found := this.groupPeerKeys.Get(groupNumber); found {
+			valuex.(*hashmap.Map).Put(0, t.SelfGetPublicKey())
+		}
+
+		if !this.groupPeerNames.Has(groupNumber) {
+			this.groupPeerNames.Put(groupNumber, hashmap.New())
+		} else {
+			this.groupPeerNames.Put(groupNumber, hashmap.New()) // 这时再清空比较好
+		}
+		if valuex, found := this.groupPeerNames.Get(groupNumber); found {
+			valuex.(*hashmap.Map).Put(0, t.SelfGetName())
+		}
+
+	})
+	t.HookConferenceSetTitle(func(groupNumber uint32, title string) {
+		this.groupTitles.Put(groupNumber, title)
+		// log.Println("set group title:", groupNumber, title)
 	})
 }

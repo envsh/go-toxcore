@@ -101,6 +101,18 @@ func ConferencePeerGetName(t *tox.Tox, groupNumber uint32, peerNumber uint32) (n
 	return
 }
 
+func ConferenceGetTitle(t *tox.Tox, groupNumber uint32) (title string, found bool) {
+	ctxmu.Lock()
+	defer ctxmu.Unlock()
+
+	xt := ctxs[t]
+	// log.Println(groupNumber, xt.groupTitles.String())
+	if namex, found := xt.groupTitles.Get(groupNumber); found {
+		return namex.(string), found
+	}
+	return
+}
+
 func Connect(this *tox.Tox) error {
 	// bootstrap
 	this.Bootstrap("194.249.212.109", 33445, "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B")

@@ -214,6 +214,10 @@ func (this *Tox) ConferenceNew() (uint32, error) {
 	if r == C.UINT32_MAX {
 		return uint32(r), toxerrf("add group chat failed: %d", cerr)
 	}
+
+	if this.hooks.ConferenceNew != nil {
+		this.hooks.ConferenceNew(uint32(r))
+	}
 	return uint32(r), nil
 }
 
@@ -353,6 +357,10 @@ func (this *Tox) ConferenceSetTitle(groupNumber uint32, title string) (int, erro
 			return 0, errors.New("title too long")
 		}
 		return 0, toxerrf("set title failed:%d", cerr)
+	}
+
+	if this.hooks.ConferenceSetTitle != nil {
+		this.hooks.ConferenceSetTitle(groupNumber, title)
 	}
 	return 1, nil
 }
