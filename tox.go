@@ -116,6 +116,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	// "sync"
 	"unsafe"
 
@@ -186,7 +187,8 @@ type Tox struct {
 	cb_iterate_data              interface{}
 	cb_conference_message_setted bool
 
-	hooks callHookMethods
+	hooks  callHookMethods
+	cbevts sync.Map
 }
 
 var cbUserDatas = newUserData()
@@ -686,19 +688,28 @@ func (this *Tox) IterationInterval() int {
 // compatable with legacy version
 func (this *Tox) Iterate() {
 	this.lock()
-	defer this.unlock()
-
 	C.tox_iterate(this.toxcore, nil)
+	this.unlock()
+
+	this.invokeCallbackEvents()
 }
 
 // for toktok new method
 func (this *Tox) Iterate2(userData interface{}) {
 	this.lock()
-	defer this.unlock()
-
 	this.cb_iterate_data = userData
 	C.tox_iterate(this.toxcore, nil)
 	this.cb_iterate_data = nil
+	this.unlock()
+
+	this.invokeCallbackEvents()
+}
+
+func (this *Tox) invokeCallbackEvents() {
+	this.cbevts.Range(func(key interface{}, value interface{}) bool {
+
+		return true
+	})
 }
 
 func (this *Tox) lock() {
