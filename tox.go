@@ -116,7 +116,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 	// "sync"
 	"unsafe"
 
@@ -188,7 +187,7 @@ type Tox struct {
 	cb_conference_message_setted bool
 
 	hooks  callHookMethods
-	cbevts sync.Map
+	cbevts []func() // no need lock
 }
 
 var cbUserDatas = newUserData()
@@ -203,9 +202,7 @@ func callbackFriendRequestWrapperForC(m *C.Tox, a0 *C.uint8_t, a1 *C.uint8_t, a2
 		message_b := C.GoBytes(unsafe.Pointer(a1), C.int(a2))
 		message := string(message_b)
 		cbfn := *(*cb_friend_request_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, pubkey, message, ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, pubkey, message, ud) })
 	}
 }
 
@@ -233,9 +230,7 @@ func callbackFriendMessageWrapperForC(m *C.Tox, a0 C.uint32_t, mtype C.int,
 	for cbfni, ud := range this.cb_friend_messages {
 		message_ := C.GoStringN((*C.char)(unsafe.Pointer(a1)), (C.int)(a2))
 		cbfn := *(*cb_friend_message_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, uint32(a0), message_, ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), message_, ud) })
 	}
 }
 
@@ -261,9 +256,7 @@ func callbackFriendNameWrapperForC(m *C.Tox, a0 C.uint32_t, a1 *C.uint8_t, a2 C.
 	for cbfni, ud := range this.cb_friend_names {
 		name := C.GoStringN((*C.char)((unsafe.Pointer)(a1)), C.int(a2))
 		cbfn := *(*cb_friend_name_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, uint32(a0), name, ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), name, ud) })
 	}
 }
 
@@ -289,9 +282,7 @@ func callbackFriendStatusMessageWrapperForC(m *C.Tox, a0 C.uint32_t, a1 *C.uint8
 	for cbfni, ud := range this.cb_friend_status_messages {
 		statusText := C.GoStringN((*C.char)(unsafe.Pointer(a1)), C.int(a2))
 		cbfn := *(*cb_friend_status_message_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, uint32(a0), statusText, ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), statusText, ud) })
 	}
 }
 
@@ -316,9 +307,7 @@ func callbackFriendStatusWrapperForC(m *C.Tox, a0 C.uint32_t, a1 C.int, a2 unsaf
 	var this = cbUserDatas.get(m)
 	for cbfni, ud := range this.cb_friend_statuss {
 		cbfn := *(*cb_friend_status_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, uint32(a0), int(a1), ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), int(a1), ud) })
 	}
 }
 
@@ -343,9 +332,7 @@ func callbackFriendConnectionStatusWrapperForC(m *C.Tox, a0 C.uint32_t, a1 C.int
 	var this = cbUserDatas.get(m)
 	for cbfni, ud := range this.cb_friend_connection_statuss {
 		cbfn := *(*cb_friend_connection_status_ftype)((unsafe.Pointer)(cbfni))
-		this.beforeCallback()
-		cbfn(this, uint32(a0), int(a1), ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), int(a1), ud) })
 	}
 }
 
@@ -370,9 +357,7 @@ func callbackFriendTypingWrapperForC(m *C.Tox, a0 C.uint32_t, a1 C.uint8_t, a2 u
 	var this = cbUserDatas.get(m)
 	for cbfni, ud := range this.cb_friend_typings {
 		cbfn := *(*cb_friend_typing_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, uint32(a0), uint8(a1), ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), uint8(a1), ud) })
 	}
 }
 
@@ -397,9 +382,7 @@ func callbackFriendReadReceiptWrapperForC(m *C.Tox, a0 C.uint32_t, a1 C.uint32_t
 	var this = cbUserDatas.get(m)
 	for cbfni, ud := range this.cb_friend_read_receipts {
 		cbfn := *(*cb_friend_read_receipt_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, uint32(a0), uint32(a1), ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), uint32(a1), ud) })
 	}
 }
 
@@ -425,9 +408,7 @@ func callbackFriendLossyPacketWrapperForC(m *C.Tox, a0 C.uint32_t, a1 *C.uint8_t
 	for cbfni, ud := range this.cb_friend_lossy_packets {
 		cbfn := *(*cb_friend_lossy_packet_ftype)(cbfni)
 		msg := C.GoStringN((*C.char)(unsafe.Pointer(a1)), C.int(len))
-		this.beforeCallback()
-		cbfn(this, uint32(a0), msg, ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), msg, ud) })
 	}
 }
 
@@ -453,9 +434,7 @@ func callbackFriendLosslessPacketWrapperForC(m *C.Tox, a0 C.uint32_t, a1 *C.uint
 	for cbfni, ud := range this.cb_friend_lossless_packets {
 		cbfn := *(*cb_friend_lossless_packet_ftype)(cbfni)
 		msg := C.GoStringN((*C.char)(unsafe.Pointer(a1)), C.int(len))
-		this.beforeCallback()
-		cbfn(this, uint32(a0), msg, ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), msg, ud) })
 	}
 }
 
@@ -480,9 +459,7 @@ func callbackSelfConnectionStatusWrapperForC(m *C.Tox, status C.int, a2 unsafe.P
 	var this = cbUserDatas.get(m)
 	for cbfni, ud := range this.cb_self_connection_statuss {
 		cbfn := *(*cb_self_connection_status_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, int(status), ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, int(status), ud) })
 	}
 }
 
@@ -509,9 +486,7 @@ func callbackFileRecvControlWrapperForC(m *C.Tox, friendNumber C.uint32_t, fileN
 	var this = cbUserDatas.get(m)
 	for cbfni, ud := range this.cb_file_recv_controls {
 		cbfn := *(*cb_file_recv_control_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, uint32(friendNumber), uint32(fileNumber), int(control), ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(friendNumber), uint32(fileNumber), int(control), ud) })
 	}
 }
 
@@ -537,10 +512,10 @@ func callbackFileRecvWrapperForC(m *C.Tox, friendNumber C.uint32_t, fileNumber C
 	for cbfni, ud := range this.cb_file_recvs {
 		cbfn := *(*cb_file_recv_ftype)(cbfni)
 		fileName_ := C.GoStringN((*C.char)(unsafe.Pointer(fileName)), C.int(fileNameLength))
-		this.beforeCallback()
-		cbfn(this, uint32(friendNumber), uint32(fileNumber), uint32(kind),
-			uint64(fileSize), fileName_, ud)
-		this.afterCallback()
+		this.putcbevts(func() {
+			cbfn(this, uint32(friendNumber), uint32(fileNumber), uint32(kind),
+				uint64(fileSize), fileName_, ud)
+		})
 	}
 }
 
@@ -566,9 +541,7 @@ func callbackFileRecvChunkWrapperForC(m *C.Tox, friendNumber C.uint32_t, fileNum
 	for cbfni, ud := range this.cb_file_recv_chunks {
 		cbfn := *(*cb_file_recv_chunk_ftype)(cbfni)
 		data_ := C.GoBytes((unsafe.Pointer)(data), C.int(length))
-		this.beforeCallback()
-		cbfn(this, uint32(friendNumber), uint32(fileNumber), uint64(position), data_, ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(friendNumber), uint32(fileNumber), uint64(position), data_, ud) })
 	}
 }
 
@@ -594,9 +567,7 @@ func callbackFileChunkRequestWrapperForC(m *C.Tox, friendNumber C.uint32_t, file
 	var this = cbUserDatas.get(m)
 	for cbfni, ud := range this.cb_file_chunk_requests {
 		cbfn := *(*cb_file_chunk_request_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, uint32(friendNumber), uint32(fileNumber), uint64(position), int(length), ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(friendNumber), uint32(fileNumber), uint64(position), int(length), ud) })
 	}
 }
 
@@ -689,9 +660,11 @@ func (this *Tox) IterationInterval() int {
 func (this *Tox) Iterate() {
 	this.lock()
 	C.tox_iterate(this.toxcore, nil)
+	cbevts := this.cbevts
+	this.cbevts = nil
 	this.unlock()
 
-	this.invokeCallbackEvents()
+	this.invokeCallbackEvents(cbevts)
 }
 
 // for toktok new method
@@ -700,16 +673,17 @@ func (this *Tox) Iterate2(userData interface{}) {
 	this.cb_iterate_data = userData
 	C.tox_iterate(this.toxcore, nil)
 	this.cb_iterate_data = nil
+	cbevts := this.cbevts
+	this.cbevts = nil
 	this.unlock()
 
-	this.invokeCallbackEvents()
+	this.invokeCallbackEvents(cbevts)
 }
 
-func (this *Tox) invokeCallbackEvents() {
-	this.cbevts.Range(func(key interface{}, value interface{}) bool {
-
-		return true
-	})
+func (this *Tox) invokeCallbackEvents(cbevts []func()) {
+	for _, cbfn := range cbevts {
+		cbfn()
+	}
 }
 
 func (this *Tox) lock() {
@@ -1271,12 +1245,7 @@ func (this *Tox) IsConnected() int {
 	return int(r)
 }
 
-func (this *Tox) beforeCallback(args ...interface{}) {
-	this.unlock()
-}
-func (this *Tox) afterCallback(args ...interface{}) {
-	this.lock()
-}
+func (this *Tox) putcbevts(f func()) { this.cbevts = append(this.cbevts, f) }
 
 ////////////
 /*
