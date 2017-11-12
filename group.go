@@ -66,9 +66,7 @@ func callbackConferenceInviteWrapperForC(m *C.Tox, a0 C.uint32_t, a1 C.TOX_CONFE
 	for cbfni, ud := range this.cb_conference_invites {
 		cbfn := *(*cb_conference_invite_ftype)(cbfni)
 		data := C.GoBytes((unsafe.Pointer)(a2), C.int(a3))
-		this.beforeCallback()
-		cbfn(this, uint32(a0), uint8(a1), data, ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), uint8(a1), data, ud) })
 	}
 }
 
@@ -95,17 +93,13 @@ func callbackConferenceMessageWrapperForC(m *C.Tox, a0 C.uint32_t, a1 C.uint32_t
 		for cbfni, ud := range this.cb_conference_messages {
 			cbfn := *(*cb_conference_message_ftype)(cbfni)
 			message := C.GoStringN((*C.char)((*C.int8_t)(a2)), C.int(a3))
-			this.beforeCallback()
-			cbfn(this, uint32(a0), uint32(a1), message, ud)
-			this.afterCallback()
+			this.putcbevts(func() { cbfn(this, uint32(a0), uint32(a1), message, ud) })
 		}
 	} else {
 		for cbfni, ud := range this.cb_conference_actions {
 			cbfn := *(*cb_conference_action_ftype)(cbfni)
 			message := C.GoStringN((*C.char)((*C.int8_t)(a2)), C.int(a3))
-			this.beforeCallback()
-			cbfn(this, uint32(a0), uint32(a1), message, ud)
-			this.afterCallback()
+			this.putcbevts(func() { cbfn(this, uint32(a0), uint32(a1), message, ud) })
 		}
 	}
 }
@@ -155,9 +149,7 @@ func callbackConferenceTitleWrapperForC(m *C.Tox, a0 C.uint32_t, a1 C.uint32_t, 
 	for cbfni, ud := range this.cb_conference_titles {
 		cbfn := *(*cb_conference_title_ftype)(cbfni)
 		title := C.GoStringN((*C.char)((unsafe.Pointer)(a2)), C.int(a3))
-		this.beforeCallback()
-		cbfn(this, uint32(a0), uint32(a1), title, ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), uint32(a1), title, ud) })
 	}
 }
 
@@ -182,9 +174,7 @@ func callbackConferenceNameListChangeWrapperForC(m *C.Tox, a0 C.uint32_t, a1 C.u
 	var this = cbUserDatas.get(m)
 	for cbfni, ud := range this.cb_conference_namelist_changes {
 		cbfn := *(*cb_conference_namelist_change_ftype)(cbfni)
-		this.beforeCallback()
-		cbfn(this, uint32(a0), uint32(a1), uint8(a2), ud)
-		this.afterCallback()
+		this.putcbevts(func() { cbfn(this, uint32(a0), uint32(a1), uint8(a2), ud) })
 	}
 }
 
