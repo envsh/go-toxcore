@@ -8,105 +8,27 @@ package tox
 //////
 
 void callbackFriendRequestWrapperForC(Tox *, uint8_t *, uint8_t *, uint16_t, void*);
-typedef void (*cb_friend_request_ftype)(Tox *, const uint8_t *, const uint8_t *, size_t, void*);
-static void cb_friend_request_wrapper_for_go(Tox *m, cb_friend_request_ftype fn, void *userdata)
-{ tox_callback_friend_request(m, fn); }
-
 void callbackFriendMessageWrapperForC(Tox *, uint32_t, int, uint8_t*, uint32_t, void*);
-typedef void (*cb_friend_message_ftype)(Tox *, uint32_t, TOX_MESSAGE_TYPE, const uint8_t*, size_t, void*);
-static void cb_friend_message_wrapper_for_go(Tox *m, cb_friend_message_ftype fn, void *userdata)
-{ tox_callback_friend_message(m, fn); }
-
 void callbackFriendNameWrapperForC(Tox *, uint32_t, uint8_t*, uint32_t, void*);
-typedef void (*cb_friend_name_ftype)(Tox *, uint32_t, const uint8_t*, size_t, void*);
-static void cb_friend_name_wrapper_for_go(Tox *m, cb_friend_name_ftype fn, void *userdata)
-{ tox_callback_friend_name(m, fn); }
-
 void callbackFriendStatusMessageWrapperForC(Tox *, uint32_t, uint8_t*, uint32_t, void*);
-typedef void (*cb_friend_status_message_ftype)(Tox *, uint32_t, const uint8_t*, size_t, void*);
-static void cb_friend_status_message_wrapper_for_go(Tox *m, cb_friend_status_message_ftype fn, void *userdata)
-{ tox_callback_friend_status_message(m, fn); }
-
 void callbackFriendStatusWrapperForC(Tox *, uint32_t, int, void*);
-typedef void (*cb_friend_status_ftype)(Tox *, uint32_t, TOX_USER_STATUS, void*);
-static void cb_friend_status_wrapper_for_go(Tox *m, cb_friend_status_ftype fn, void *userdata)
-{ tox_callback_friend_status(m, fn); }
-
 void callbackFriendConnectionStatusWrapperForC(Tox *, uint32_t, int, void*);
-typedef void (*cb_friend_connection_status_ftype)(Tox *, uint32_t, uint32_t, void*);
-static void cb_friend_connection_status_wrapper_for_go(Tox *m, cb_friend_connection_status_ftype fn, void *userdata)
-{ tox_callback_friend_connection_status(m, fn); }
-
 void callbackFriendTypingWrapperForC(Tox *, uint32_t, uint8_t, void*);
-typedef void (*cb_friend_typing_ftype)(Tox *, uint32_t, bool, void*);
-static void cb_friend_typing_wrapper_for_go(Tox *m, cb_friend_typing_ftype fn, void *userdata)
-{ tox_callback_friend_typing(m, fn); }
-
 void callbackFriendReadReceiptWrapperForC(Tox *, uint32_t, uint32_t, void*);
-typedef void (*cb_friend_read_receipt_ftype)(Tox *, uint32_t, uint32_t, void*);
-static void cb_friend_read_receipt_wrapper_for_go(Tox *m, cb_friend_read_receipt_ftype fn, void *userdata)
-{ tox_callback_friend_read_receipt(m, fn); }
-
 void callbackFriendLossyPacketWrapperForC(Tox *, uint32_t, uint8_t*, size_t, void*);
-typedef void (*cb_friend_lossy_packet_ftype)(Tox *, uint32_t, const uint8_t*, size_t, void*);
-static void cb_friend_lossy_packet_wrapper_for_go(Tox *m, cb_friend_lossy_packet_ftype fn, void *userdata)
-{ tox_callback_friend_lossy_packet(m, fn); }
-
 void callbackFriendLosslessPacketWrapperForC(Tox *, uint32_t, uint8_t*, size_t, void*);
-typedef void (*cb_friend_lossless_packet_ftype)(Tox *, uint32_t, const uint8_t*, size_t, void*);
-static void cb_friend_lossless_packet_wrapper_for_go(Tox *m, cb_friend_lossless_packet_ftype fn, void *userdata)
-{ tox_callback_friend_lossless_packet(m, fn); }
-
 void callbackSelfConnectionStatusWrapperForC(Tox *, int, void*);
-typedef void (*cb_self_connection_status_ftype)(Tox *, TOX_CONNECTION, void*);
-static void cb_self_connection_status_wrapper_for_go(Tox *m, cb_self_connection_status_ftype fn, void *userdata)
-{ tox_callback_self_connection_status(m, fn); }
-
 void callbackFileRecvControlWrapperForC(Tox *tox, uint32_t friend_number, uint32_t file_number,
                                       TOX_FILE_CONTROL control, void *user_data);
-typedef void (*cb_file_recv_control_ftype)(Tox *tox, uint32_t friend_number, uint32_t file_number,
-                                      TOX_FILE_CONTROL control, void *useer_data);
-static void cb_file_recv_control_wrapper_for_go(Tox *m, cb_file_recv_control_ftype fn, void *userdata)
-{ tox_callback_file_recv_control(m, fn); }
-
 void callbackFileRecvWrapperForC(Tox *tox, uint32_t friend_number, uint32_t file_number, uint32_t kind,
                                uint64_t file_size, uint8_t *filename, size_t filename_length, void *user_data);
-typedef void (*cb_file_recv_ftype)(Tox *tox, uint32_t friend_number, uint32_t file_number, uint32_t kind,
-              uint64_t file_size, const uint8_t *filename, size_t filename_length, void *user_data);
-static void cb_file_recv_wrapper_for_go(Tox *m, cb_file_recv_ftype fn, void *userdata)
-{ tox_callback_file_recv(m, fn); }
-
 void callbackFileRecvChunkWrapperForC(Tox *tox, uint32_t friend_number, uint32_t file_number, uint64_t position,
                                     uint8_t *data, size_t length, void *user_data);
-typedef void (*cb_file_recv_chunk_ftype)(Tox *tox, uint32_t friend_number, uint32_t file_number, uint64_t position,
-                                    const uint8_t *data, size_t length, void *user_data);
-static void cb_file_recv_chunk_wrapper_for_go(Tox *m, cb_file_recv_chunk_ftype fn, void *userdata)
-{ tox_callback_file_recv_chunk(m, fn); }
-
 void callbackFileChunkRequestWrapperForC(Tox *tox, uint32_t friend_number, uint32_t file_number, uint64_t position,
                                        size_t length, void *user_data);
-typedef void (*cb_file_chunk_request_ftype)(Tox *tox, uint32_t friend_number, uint32_t file_number, uint64_t position,
-                                       size_t length, void *user_data);
-static void cb_file_chunk_request_wrapper_for_go(Tox *m, cb_file_chunk_request_ftype fn, void *userdata)
-{ tox_callback_file_chunk_request(m, fn); }
 
 // fix nouse compile warning
 static inline void fixnousetox() {
-    cb_friend_request_wrapper_for_go(NULL, NULL, NULL);
-    cb_friend_message_wrapper_for_go(NULL, NULL, NULL);
-    cb_friend_name_wrapper_for_go(NULL, NULL, NULL);
-    cb_friend_status_message_wrapper_for_go(NULL, NULL, NULL);
-    cb_friend_status_wrapper_for_go(NULL, NULL, NULL);
-    cb_friend_connection_status_wrapper_for_go(NULL, NULL, NULL);
-    cb_friend_typing_wrapper_for_go(NULL, NULL, NULL);
-    cb_friend_lossy_packet_wrapper_for_go(NULL, NULL, NULL);
-    cb_friend_lossless_packet_wrapper_for_go(NULL, NULL, NULL);
-    cb_friend_read_receipt_wrapper_for_go(NULL, NULL, NULL);
-    cb_self_connection_status_wrapper_for_go(NULL, NULL, NULL);
-    cb_file_recv_control_wrapper_for_go(NULL, NULL, NULL);
-    cb_file_recv_wrapper_for_go(NULL, NULL, NULL);
-    cb_file_recv_chunk_wrapper_for_go(NULL, NULL, NULL);
-    cb_file_chunk_request_wrapper_for_go(NULL, NULL, NULL);
 }
 
 */
@@ -216,11 +138,7 @@ func (this *Tox) CallbackFriendRequestAdd(cbfn cb_friend_request_ftype, userData
 	}
 	this.cb_friend_requests[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_request_ftype)(C.callbackFriendRequestWrapperForC)
-	var _userData = unsafe.Pointer(this)
-	_userData = nil
-
-	C.cb_friend_request_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_request(this.toxcore, (*C.tox_friend_request_cb)(C.callbackFriendRequestWrapperForC))
 }
 
 //export callbackFriendMessageWrapperForC
@@ -244,10 +162,7 @@ func (this *Tox) CallbackFriendMessageAdd(cbfn cb_friend_message_ftype, userData
 	}
 	this.cb_friend_messages[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_message_ftype)(C.callbackFriendMessageWrapperForC)
-	var _userData unsafe.Pointer = nil
-
-	C.cb_friend_message_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_message(this.toxcore, (*C.tox_friend_message_cb)(C.callbackFriendMessageWrapperForC))
 }
 
 //export callbackFriendNameWrapperForC
@@ -270,10 +185,7 @@ func (this *Tox) CallbackFriendNameAdd(cbfn cb_friend_name_ftype, userData inter
 	}
 	this.cb_friend_names[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_name_ftype)(C.callbackFriendNameWrapperForC)
-	var _userData unsafe.Pointer = nil
-
-	C.cb_friend_name_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_name(this.toxcore, (*C.tox_friend_name_cb)(C.callbackFriendNameWrapperForC))
 }
 
 //export callbackFriendStatusMessageWrapperForC
@@ -296,10 +208,7 @@ func (this *Tox) CallbackFriendStatusMessageAdd(cbfn cb_friend_status_message_ft
 	}
 	this.cb_friend_status_messages[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_status_message_ftype)(C.callbackFriendStatusMessageWrapperForC)
-	var _userData unsafe.Pointer = nil
-
-	C.cb_friend_status_message_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_status_message(this.toxcore, (*C.tox_friend_status_message_cb)(C.callbackFriendStatusMessageWrapperForC))
 }
 
 //export callbackFriendStatusWrapperForC
@@ -321,10 +230,7 @@ func (this *Tox) CallbackFriendStatusAdd(cbfn cb_friend_status_ftype, userData i
 	}
 	this.cb_friend_statuss[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_status_ftype)(C.callbackFriendStatusWrapperForC)
-	var _userData unsafe.Pointer = nil
-
-	C.cb_friend_status_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_status(this.toxcore, (*C.tox_friend_status_cb)(C.callbackFriendStatusWrapperForC))
 }
 
 //export callbackFriendConnectionStatusWrapperForC
@@ -346,10 +252,7 @@ func (this *Tox) CallbackFriendConnectionStatusAdd(cbfn cb_friend_connection_sta
 	}
 	this.cb_friend_connection_statuss[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_connection_status_ftype)(C.callbackFriendConnectionStatusWrapperForC)
-	var _userData unsafe.Pointer = nil
-
-	C.cb_friend_connection_status_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_connection_status(this.toxcore, (*C.tox_friend_connection_status_cb)(C.callbackFriendConnectionStatusWrapperForC))
 }
 
 //export callbackFriendTypingWrapperForC
@@ -371,10 +274,7 @@ func (this *Tox) CallbackFriendTypingAdd(cbfn cb_friend_typing_ftype, userData i
 	}
 	this.cb_friend_typings[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_typing_ftype)(C.callbackFriendTypingWrapperForC)
-	var _userData unsafe.Pointer = nil
-
-	C.cb_friend_typing_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_typing(this.toxcore, (*C.tox_friend_typing_cb)(C.callbackFriendTypingWrapperForC))
 }
 
 //export callbackFriendReadReceiptWrapperForC
@@ -396,10 +296,7 @@ func (this *Tox) CallbackFriendReadReceiptAdd(cbfn cb_friend_read_receipt_ftype,
 	}
 	this.cb_friend_read_receipts[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_read_receipt_ftype)(C.callbackFriendReadReceiptWrapperForC)
-	var _userData unsafe.Pointer
-
-	C.cb_friend_read_receipt_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_read_receipt(this.toxcore, (*C.tox_friend_read_receipt_cb)(C.callbackFriendReadReceiptWrapperForC))
 }
 
 //export callbackFriendLossyPacketWrapperForC
@@ -422,10 +319,7 @@ func (this *Tox) CallbackFriendLossyPacketAdd(cbfn cb_friend_lossy_packet_ftype,
 	}
 	this.cb_friend_lossy_packets[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_lossy_packet_ftype)(C.callbackFriendLossyPacketWrapperForC)
-	var _userData unsafe.Pointer
-
-	C.cb_friend_lossy_packet_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_lossy_packet(this.toxcore, (*C.tox_friend_lossy_packet_cb)(C.callbackFriendLossyPacketWrapperForC))
 }
 
 //export callbackFriendLosslessPacketWrapperForC
@@ -448,10 +342,7 @@ func (this *Tox) CallbackFriendLosslessPacketAdd(cbfn cb_friend_lossless_packet_
 	}
 	this.cb_friend_lossless_packets[cbfnp] = userData
 
-	var _cbfn = (C.cb_friend_lossless_packet_ftype)(C.callbackFriendLosslessPacketWrapperForC)
-	var _userData unsafe.Pointer
-
-	C.cb_friend_lossless_packet_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_friend_lossless_packet(this.toxcore, (*C.tox_friend_lossless_packet_cb)(C.callbackFriendLosslessPacketWrapperForC))
 }
 
 //export callbackSelfConnectionStatusWrapperForC
@@ -473,10 +364,7 @@ func (this *Tox) CallbackSelfConnectionStatusAdd(cbfn cb_self_connection_status_
 	}
 	this.cb_self_connection_statuss[cbfnp] = userData
 
-	var _cbfn = (C.cb_self_connection_status_ftype)(C.callbackSelfConnectionStatusWrapperForC)
-	// var _userData = unsafe.Pointer(this)
-
-	C.cb_self_connection_status_wrapper_for_go(this.toxcore, _cbfn, nil)
+	C.tox_callback_self_connection_status(this.toxcore, (*C.tox_self_connection_status_cb)(C.callbackSelfConnectionStatusWrapperForC))
 }
 
 // 包内部函数
@@ -499,10 +387,8 @@ func (this *Tox) CallbackFileRecvControlAdd(cbfn cb_file_recv_control_ftype, use
 		return
 	}
 	this.cb_file_recv_controls[cbfnp] = userData
-	var _cbfn = (C.cb_file_recv_control_ftype)(unsafe.Pointer(C.callbackFileRecvControlWrapperForC))
-	var _userData unsafe.Pointer = nil
 
-	C.cb_file_recv_control_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_file_recv_control(this.toxcore, (*C.tox_file_recv_control_cb)(C.callbackFileRecvControlWrapperForC))
 }
 
 //export callbackFileRecvWrapperForC
@@ -528,10 +414,8 @@ func (this *Tox) CallbackFileRecvAdd(cbfn cb_file_recv_ftype, userData interface
 		return
 	}
 	this.cb_file_recvs[cbfnp] = userData
-	var _cbfn = (C.cb_file_recv_ftype)(unsafe.Pointer(C.callbackFileRecvWrapperForC))
-	var _userData unsafe.Pointer = nil
 
-	C.cb_file_recv_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_file_recv(this.toxcore, (*C.tox_file_recv_cb)(C.callbackFileRecvWrapperForC))
 }
 
 //export callbackFileRecvChunkWrapperForC
@@ -555,10 +439,7 @@ func (this *Tox) CallbackFileRecvChunkAdd(cbfn cb_file_recv_chunk_ftype, userDat
 	}
 	this.cb_file_recv_chunks[cbfnp] = userData
 
-	var _cbfn = (C.cb_file_recv_chunk_ftype)(unsafe.Pointer(C.callbackFileRecvChunkWrapperForC))
-	var _userData unsafe.Pointer = nil
-
-	C.cb_file_recv_chunk_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_file_recv_chunk(this.toxcore, (*C.tox_file_recv_chunk_cb)(C.callbackFileRecvChunkWrapperForC))
 }
 
 //export callbackFileChunkRequestWrapperForC
@@ -581,10 +462,7 @@ func (this *Tox) CallbackFileChunkRequestAdd(cbfn cb_file_chunk_request_ftype, u
 	}
 	this.cb_file_chunk_requests[cbfnp] = userData
 
-	var _cbfn = (C.cb_file_chunk_request_ftype)(unsafe.Pointer(C.callbackFileChunkRequestWrapperForC))
-	var _userData unsafe.Pointer = nil
-
-	C.cb_file_chunk_request_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_file_chunk_request(this.toxcore, (*C.tox_file_chunk_request_cb)(C.callbackFileChunkRequestWrapperForC))
 }
 
 func NewTox(opt *ToxOptions) *Tox {
