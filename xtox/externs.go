@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"math"
 	"strings"
+	"time"
 
 	tox "github.com/kitech/go-toxcore"
 	"github.com/kitech/godsts/maps/hashmap"
@@ -139,4 +140,15 @@ func CheckPubkey(s string) bool {
 		return false
 	}
 	return true
+}
+
+// should block
+func Run(t *tox.Tox) {
+	tmer := time.NewTicker(200 * time.Millisecond)
+	for {
+		select {
+		case <-tmer.C:
+			t.Iterate2(nil)
+		}
+	}
 }
