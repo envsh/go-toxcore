@@ -7,37 +7,14 @@ package tox
 #include <tox/tox.h>
 
 void callbackConferenceInviteWrapperForC(Tox*, uint32_t, TOX_CONFERENCE_TYPE, uint8_t *, size_t, void *);
-typedef void (*cb_conference_invite_ftype)(Tox *, uint32_t, TOX_CONFERENCE_TYPE, const uint8_t *, size_t, void *);
-static void cb_conference_invite_wrapper_for_go(Tox *m, cb_conference_invite_ftype fn, void *userdata)
-{ tox_callback_conference_invite(m, fn); }
-
 void callbackConferenceMessageWrapperForC(Tox *, uint32_t, uint32_t, TOX_MESSAGE_TYPE, int8_t *, size_t, void *);
-typedef void (*cb_conference_message_ftype)(Tox *, uint32_t, uint32_t, TOX_MESSAGE_TYPE, const uint8_t *, size_t, void *);
-static void cb_conference_message_wrapper_for_go(Tox *m, cb_conference_message_ftype fn, void *userdata)
-{ tox_callback_conference_message(m, fn); }
-
 // void callbackConferenceActionWrapperForC(Tox*, uint32_t, uint32_t, uint8_t*, size_t, void*);
-// typedef void (*cb_conference_action_ftype)(Tox*, uint32_t, uint32_t, const uint8_t*, size_t, void*);
-// static void cb_conference_action_wrapper_for_go(Tox *m, cb_conference_action_ftype fn, void *userdata)
-// { tox_callback_conference_message(m, fn); }
 
 void callbackConferenceTitleWrapperForC(Tox*, uint32_t, uint32_t, uint8_t*, size_t, void*);
-typedef void (*cb_conference_title_ftype)(Tox*, uint32_t, uint32_t, const uint8_t*, size_t, void*);
-static void cb_conference_title_wrapper_for_go(Tox *m, cb_conference_title_ftype fn, void *userdata)
-{ tox_callback_conference_title(m, fn); }
-
 void callbackConferenceNameListChangeWrapperForC(Tox*, uint32_t, uint32_t, TOX_CONFERENCE_STATE_CHANGE, void*);
-typedef void (*cb_conference_namelist_change_ftype)(Tox*, uint32_t, uint32_t, TOX_CONFERENCE_STATE_CHANGE, void*);
-static void cb_conference_namelist_change_wrapper_for_go(Tox *m, cb_conference_namelist_change_ftype fn, void *userdata)
-{ tox_callback_conference_namelist_change(m, fn); }
 
 // fix nouse compile warning
 static inline void fixnousetoxgroup() {
-    cb_conference_invite_wrapper_for_go(NULL, NULL, NULL);
-    cb_conference_message_wrapper_for_go(NULL, NULL, NULL);
-    // cb_conference_action_wrapper_for_go(NULL, NULL, NULL);
-    cb_conference_title_wrapper_for_go(NULL, NULL, NULL);
-    cb_conference_namelist_change_wrapper_for_go(NULL, NULL, NULL);
 }
 
 */
@@ -80,10 +57,7 @@ func (this *Tox) CallbackConferenceInviteAdd(cbfn cb_conference_invite_ftype, us
 	}
 	this.cb_conference_invites[cbfnp] = userData
 
-	var _cbfn = (C.cb_conference_invite_ftype)(C.callbackConferenceInviteWrapperForC)
-	var _userData unsafe.Pointer = nil
-
-	C.cb_conference_invite_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_conference_invite(this.toxcore, (*C.tox_conference_invite_cb)(C.callbackConferenceInviteWrapperForC))
 }
 
 //export callbackConferenceMessageWrapperForC
@@ -117,10 +91,7 @@ func (this *Tox) CallbackConferenceMessageAdd(cbfn cb_conference_message_ftype, 
 	if !this.cb_conference_message_setted {
 		this.cb_conference_message_setted = true
 
-		var _cbfn = (C.cb_conference_message_ftype)(C.callbackConferenceMessageWrapperForC)
-		var _userData unsafe.Pointer = nil
-
-		C.cb_conference_message_wrapper_for_go(this.toxcore, _cbfn, _userData)
+		C.tox_callback_conference_message(this.toxcore, (*C.tox_conference_message_cb)(C.callbackConferenceMessageWrapperForC))
 	}
 }
 
@@ -136,10 +107,7 @@ func (this *Tox) CallbackConferenceActionAdd(cbfn cb_conference_action_ftype, us
 
 	if !this.cb_conference_message_setted {
 		this.cb_conference_message_setted = true
-		var _cbfn = (C.cb_conference_message_ftype)(C.callbackConferenceMessageWrapperForC)
-		var _userData unsafe.Pointer = nil
-
-		C.cb_conference_message_wrapper_for_go(this.toxcore, _cbfn, _userData)
+		C.tox_callback_conference_message(this.toxcore, (*C.tox_conference_message_cb)(C.callbackConferenceMessageWrapperForC))
 	}
 }
 
@@ -163,10 +131,7 @@ func (this *Tox) CallbackConferenceTitleAdd(cbfn cb_conference_title_ftype, user
 	}
 	this.cb_conference_titles[cbfnp] = userData
 
-	var _cbfn = (C.cb_conference_title_ftype)(C.callbackConferenceTitleWrapperForC)
-	var _userData unsafe.Pointer = nil
-
-	C.cb_conference_title_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_conference_title(this.toxcore, (*C.tox_conference_title_cb)(C.callbackConferenceTitleWrapperForC))
 }
 
 //export callbackConferenceNameListChangeWrapperForC
@@ -188,10 +153,7 @@ func (this *Tox) CallbackConferenceNameListChangeAdd(cbfn cb_conference_namelist
 	}
 	this.cb_conference_namelist_changes[cbfnp] = userData
 
-	var _cbfn = (C.cb_conference_namelist_change_ftype)(C.callbackConferenceNameListChangeWrapperForC)
-	var _userData unsafe.Pointer = nil
-
-	C.cb_conference_namelist_change_wrapper_for_go(this.toxcore, _cbfn, _userData)
+	C.tox_callback_conference_namelist_change(this.toxcore, (*C.tox_conference_namelist_change_cb)(C.callbackConferenceNameListChangeWrapperForC))
 }
 
 // methods tox_conference_*
