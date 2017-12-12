@@ -20,9 +20,9 @@ static inline void fixnousetoxgroup() {
 */
 import "C"
 import (
-	"bytes"
 	"encoding/hex"
 	"errors"
+	"math"
 	"strings"
 	"unsafe"
 )
@@ -203,7 +203,7 @@ func (this *Tox) ConferencePeerGetName(groupNumber uint32, peerNumber uint32) (s
 		return "", toxerrf("get peer name failed: %d", cerr)
 	}
 
-	return string(_name[:bytes.IndexRune(_name[:], 0)]), nil
+	return C.GoString((*C.char)(safeptr(_name[:]))), nil
 }
 
 func (this *Tox) ConferencePeerGetPublicKey(groupNumber uint32, peerNumber uint32) (string, error) {
@@ -325,7 +325,7 @@ func (this *Tox) ConferenceGetTitle(groupNumber uint32) (string, error) {
 	if r == false {
 		return "", errors.New("get title failed")
 	}
-	return string(_title[:bytes.IndexRune(_title[:], 0)]), nil
+	return C.GoString((*C.char)(safeptr(_title[:]))), nil
 }
 
 func (this *Tox) ConferencePeerNumberIsOurs(groupNumber uint32, peerNumber uint32) bool {
@@ -365,7 +365,7 @@ func (this *Tox) ConferenceGetNames(groupNumber uint32) []string {
 func (this *Tox) ConferenceGetPeerPubkeys(groupNumber uint32) []string {
 	vec := make([]string, 0)
 	peerCount := this.ConferencePeerCount(groupNumber)
-	for peerNumber := uint32(0); peerNumber < C.UINT32_MAX; peerNumber++ {
+	for peerNumber := uint32(0); peerNumber < math.MaxUint32; peerNumber++ {
 		pubkey, err := this.ConferencePeerGetPublicKey(groupNumber, peerNumber)
 		if err != nil {
 		} else {
@@ -381,7 +381,7 @@ func (this *Tox) ConferenceGetPeerPubkeys(groupNumber uint32) []string {
 func (this *Tox) ConferenceGetPeers(groupNumber uint32) map[uint32]string {
 	vec := make(map[uint32]string, 0)
 	peerCount := this.ConferencePeerCount(groupNumber)
-	for peerNumber := uint32(0); peerNumber < C.UINT32_MAX; peerNumber++ {
+	for peerNumber := uint32(0); peerNumber < math.MaxUint32; peerNumber++ {
 		pubkey, err := this.ConferencePeerGetPublicKey(groupNumber, peerNumber)
 		if err != nil {
 		} else {

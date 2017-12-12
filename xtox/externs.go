@@ -2,6 +2,7 @@ package xtox
 
 import (
 	"encoding/hex"
+	"gopp"
 	"math"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ func ConferenceAllTitles(this *tox.Tox) map[uint32]string {
 	return ret
 }
 
-func ConferenceFind(this *tox.Tox, title string) (gn uint32, found bool) {
+func ConferenceFind /*ByTitle*/ (this *tox.Tox, title string) (gn uint32, found bool) {
 	cids := this.ConferenceGetChatlist()
 	for _, cid := range cids {
 		title_, err := this.ConferenceGetTitle(cid)
@@ -53,6 +54,32 @@ func ConferenceFindAll(this *tox.Tox, title string) (gns []uint32, found bool) {
 	return gns, found
 }
 
+func ConferenceFindPeer(this *tox.Tox, name string) (pubkey string, found bool) {
+	cids := this.ConferenceGetChatlist()
+	for _, cid := range cids {
+		names := this.ConferenceGetNames(cid)
+		foundName := false
+		foundIndex := 0
+		for idx, tname := range names {
+			if tname == name {
+				foundName = true
+				foundIndex = idx
+				break
+			}
+		}
+		if !foundName {
+			continue
+		}
+		peers := this.ConferenceGetPeers(cid)
+		pubkey, found = peers[uint32(foundIndex)]
+
+		if foundName {
+			break
+		}
+	}
+	return
+}
+
 func IsSelfGroupMessage(t *tox.Tox, groupNumber int, peerNumber int) bool {
 	selfMessage := false
 	peerPubkey, err := t.GroupPeerPubkey(groupNumber, peerNumber)
@@ -69,6 +96,23 @@ func GetAllFriendList(t *tox.Tox) (friends []uint32) {
 	for fn := uint32(0); fn < math.MaxUint32; fn++ {
 		if t.FriendExists(fn) {
 			friends = append(friends, fn)
+		} else {
+			break
+		}
+	}
+	return
+}
+
+func FindFriendByName(t *tox.Tox, name string) (pubkey string, found bool) {
+	for i := uint32(0); i < 256; i++ {
+		if t.FriendExists(i) {
+			tname, err := t.FriendGetName(i)
+			gopp.ErrPrint(err, tname)
+			if err == nil && tname == name {
+				found = true
+				pubkey, _ = t.FriendGetPublicKey(i)
+				break
+			}
 		} else {
 			break
 		}
@@ -116,9 +160,9 @@ func ConferenceGetTitle(t *tox.Tox, groupNumber uint32) (title string, found boo
 
 func Connect(this *tox.Tox) error {
 	// bootstrap
-	this.Bootstrap("194.249.212.109", 33445, "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B")
-	this.Bootstrap("130.133.110.14", 33445, "461FA3776EF0FA655F1A05477DF1B3B614F7D6B124F7DB1DD4FE3C08B03B640F")
-	return nil
+	_, err := this.Bootstrap("194.249.212.109", 33445, "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B")
+	_, err = this.Bootstrap("130.133.110.14", 33445, "461FA3776EF0FA655F1A05477DF1B3B614F7D6B124F7DB1DD4FE3C08B03B640F")
+	return err
 }
 
 func CheckId(s string) bool {

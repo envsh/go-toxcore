@@ -8,10 +8,12 @@ features:
 [x] auto bootstrap
 [ ] auto switch bootstrap nodes
 [x] distinguish self created group and invited group
+[ ] record group inviter
+[ ] record invited group cookie
 [ ] event interface for callbacks replacement
 [ ] with text error message
-[x] duplicate title info of groups
-[x] duplicate peer info of groups
+[x] duplicate store title info of groups
+[x] duplicate store peer info of groups
 */
 // //go:generate ./getnodes.sh
 package xtox
