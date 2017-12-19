@@ -515,12 +515,12 @@ func (this *Tox) Kill() {
 		return
 	}
 
-	this.lock()
-	defer this.unlock()
-
 	if this.toxcore == nil {
 		return
 	}
+
+	this.lock()
+	defer this.unlock()
 
 	cbUserDatas.del(this.toxcore)
 	C.tox_kill(this.toxcore)
