@@ -511,11 +511,7 @@ func NewTox(opt *ToxOptions) *Tox {
 }
 
 func (this *Tox) Kill() {
-	if this == nil {
-		return
-	}
-
-	if this.toxcore == nil {
+	if this == nil || this.toxcore == nil {
 		return
 	}
 
