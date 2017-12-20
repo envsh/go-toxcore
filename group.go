@@ -28,7 +28,7 @@ import (
 )
 
 // conference callback type
-type cb_conference_invite_ftype func(this *Tox, friendNumber uint32, itype uint8, data []byte, userData interface{})
+type cb_conference_invite_ftype func(this *Tox, friendNumber uint32, itype uint8, cookie string, userData interface{})
 type cb_conference_message_ftype func(this *Tox, groupNumber uint32, peerNumber uint32, message string, userData interface{})
 
 type cb_conference_action_ftype func(this *Tox, groupNumber uint32, peerNumber uint32, action string, userData interface{})
@@ -43,7 +43,8 @@ func callbackConferenceInviteWrapperForC(m *C.Tox, a0 C.uint32_t, a1 C.TOX_CONFE
 	for cbfni, ud := range this.cb_conference_invites {
 		cbfn := *(*cb_conference_invite_ftype)(cbfni)
 		data := C.GoBytes((unsafe.Pointer)(a2), C.int(a3))
-		this.putcbevts(func() { cbfn(this, uint32(a0), uint8(a1), data, ud) })
+		cookie := strings.ToUpper(hex.EncodeToString(data))
+		this.putcbevts(func() { cbfn(this, uint32(a0), uint8(a1), cookie, ud) })
 	}
 }
 
@@ -244,17 +245,23 @@ func (this *Tox) ConferenceInvite(friendNumber uint32, groupNumber uint32) (int,
 	return 1, nil
 }
 
-func (this *Tox) ConferenceJoin(friendNumber uint32, data []byte) (uint32, error) {
-	this.lock()
-	var length = len(data)
-
-	if data == nil || length < 10 {
-		defer this.unlock()
-		return 0, errors.New("invalid data")
+func (this *Tox) ConferenceJoin(friendNumber uint32, cookie string) (uint32, error) {
+	if cookie == "" || len(cookie) < 20 {
+		return 0, errors.New("Invalid cookie:" + cookie)
 	}
 
+	data, err := hex.DecodeString(cookie)
+	if err != nil {
+
+	}
+	var datlen = len(data)
+	if data == nil || datlen < 10 {
+		return 0, errors.New("Invalid data: " + cookie)
+	}
+
+	this.lock()
 	var _fn = C.uint32_t(friendNumber)
-	var _length = C.size_t(length)
+	var _length = C.size_t(datlen)
 
 	var cerr C.TOX_ERR_CONFERENCE_JOIN
 	r := C.tox_conference_join(this.toxcore, _fn, (*C.uint8_t)(&data[0]), _length, &cerr)
@@ -265,7 +272,7 @@ func (this *Tox) ConferenceJoin(friendNumber uint32, data []byte) (uint32, error
 	defer this.unlock()
 
 	if this.hooks.ConferenceJoin != nil {
-		this.hooks.ConferenceJoin(friendNumber, uint32(r), data)
+		this.hooks.ConferenceJoin(friendNumber, uint32(r), cookie)
 	}
 
 	return uint32(r), nil

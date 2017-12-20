@@ -54,9 +54,10 @@ static inline void fixnousetoxav() {
 
 */
 import "C"
-import "unsafe"
 import (
+	"encoding/hex"
 	"errors"
+	"unsafe"
 )
 
 type cb_call_ftype func(this *ToxAV, friendNumber uint32, audioEnabled bool, videoEnabled bool, userData interface{})
@@ -324,7 +325,11 @@ func (this *Tox) AddAVGroupChat() int {
 	return int(r)
 }
 
-func (this *Tox) JoinAVGroupChat(friendNumber uint32, data []byte) (int, error) {
+func (this *Tox) JoinAVGroupChat(friendNumber uint32, cookie string) (int, error) {
+	data, err := hex.DecodeString(cookie)
+	if err != nil {
+		return 0, errors.New("Invalid cookie:" + cookie)
+	}
 	var _fn = C.int32_t(friendNumber)
 	var _data = (*C.uint8_t)((unsafe.Pointer)(&data[0]))
 	var length = len(data)
@@ -333,7 +338,11 @@ func (this *Tox) JoinAVGroupChat(friendNumber uint32, data []byte) (int, error) 
 	// TODO nil => real
 	r := C.toxav_join_av_groupchat(this.toxcore, _fn, _data, _length, nil, nil)
 	if int(r) == -1 {
-		return int(r), errors.New("join av group chat failed")
+		return int(r), errors.New("Join av group chat failed")
+	}
+
+	if this.hooks.ConferenceJoin != nil {
+		this.hooks.ConferenceJoin(friendNumber, uint32(r), cookie)
 	}
 	return int(r), nil
 }

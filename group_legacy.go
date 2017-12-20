@@ -11,7 +11,7 @@ import "C"
 
 // legacy group callback type
 
-type cb_group_invite_ftype func(this *Tox, friendNumber uint32, itype uint8, data []byte, userData interface{})
+type cb_group_invite_ftype func(this *Tox, friendNumber uint32, itype uint8, cookie string, userData interface{})
 type cb_group_message_ftype func(this *Tox, groupNumber int, peerNumber int, message string, userData interface{})
 
 type cb_group_action_ftype func(this *Tox, groupNumber int, peerNumber int, action string, userData interface{})
@@ -24,8 +24,8 @@ func (this *Tox) CallbackGroupInvite(cbfn cb_group_invite_ftype, userData interf
 	this.CallbackGroupInviteAdd(cbfn, userData)
 }
 func (this *Tox) CallbackGroupInviteAdd(cbfn cb_group_invite_ftype, userData interface{}) {
-	cbfn_ := func(this *Tox, friendNumber uint32, itype uint8, data []byte, userData interface{}) {
-		cbfn(this, friendNumber, itype, data, userData)
+	cbfn_ := func(this *Tox, friendNumber uint32, itype uint8, cookie string, userData interface{}) {
+		cbfn(this, friendNumber, itype, cookie, userData)
 	}
 	this.CallbackConferenceInviteAdd(cbfn_, userData)
 }
@@ -92,8 +92,8 @@ func (this *Tox) InviteFriend(friendNumber uint32, groupNumber int) (int, error)
 	return this.ConferenceInvite(friendNumber, uint32(groupNumber))
 }
 
-func (this *Tox) JoinGroupChat(friendNumber uint32, data []byte) (int, error) {
-	groupNumber, err := this.ConferenceJoin(friendNumber, data)
+func (this *Tox) JoinGroupChat(friendNumber uint32, cookie string) (int, error) {
+	groupNumber, err := this.ConferenceJoin(friendNumber, cookie)
 	return int(groupNumber), err
 }
 

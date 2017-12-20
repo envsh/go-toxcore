@@ -1,14 +1,14 @@
 package tox
 
 type callHookMethods struct {
-	ConferenceJoin     func(friendNumber uint32, groupNumber uint32, data []byte)
+	ConferenceJoin     func(friendNumber uint32, groupNumber uint32, cookie string)
 	ConferenceDelete   func(groupNumber uint32)
 	ConferenceNew      func(groupNumber uint32)
 	ConferenceSetTitle func(groupNumber uint32, title string)
 }
 
 // include av group
-func (this *Tox) HookConferenceJoin(fn func(friendNumber uint32, groupNumber uint32, data []byte)) {
+func (this *Tox) HookConferenceJoin(fn func(friendNumber uint32, groupNumber uint32, cookie string)) {
 	this.hooks.ConferenceJoin = fn
 }
 

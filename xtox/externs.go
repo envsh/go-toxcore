@@ -158,6 +158,50 @@ func ConferenceGetTitle(t *tox.Tox, groupNumber uint32) (title string, found boo
 	return
 }
 
+func ConferenceGetCookie(t *tox.Tox, groupNumber uint32) (cookie string, found bool) {
+	ctxmu.Lock()
+	defer ctxmu.Unlock()
+
+	xt := ctxs[t]
+	if cookiex, found := xt.invitedGroups.Get(groupNumber); found {
+		return cookiex.(string), found
+	}
+	return
+}
+
+func ConferenceGetByCookie(t *tox.Tox, cookie string) (groupNumber uint32, found bool) {
+	ctxmu.Lock()
+	defer ctxmu.Unlock()
+
+	xt := ctxs[t]
+	if groupNumberx, found := xt.invitedGroups.GetKey(cookie); found {
+		return groupNumberx.(uint32), found
+	}
+	return
+}
+
+func ConferenceGetIdentifier(t *tox.Tox, groupNumber uint32) (cookie string, found bool) {
+	ctxmu.Lock()
+	defer ctxmu.Unlock()
+
+	xt := ctxs[t]
+	if cookiex, found := xt.groupIdentifiers.Get(groupNumber); found {
+		return cookiex.(string), found
+	}
+	return
+}
+
+func ConferenceGetByIdentifier(t *tox.Tox, cookie string) (groupNumber uint32, found bool) {
+	ctxmu.Lock()
+	defer ctxmu.Unlock()
+
+	xt := ctxs[t]
+	if groupNumberx, found := xt.groupIdentifiers.GetKey(cookie); found {
+		return groupNumberx.(uint32), found
+	}
+	return
+}
+
 func Connect(this *tox.Tox) error {
 	// bootstrap
 	_, err := this.Bootstrap("194.249.212.109", 33445, "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B")

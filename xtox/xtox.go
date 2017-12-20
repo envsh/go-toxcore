@@ -19,7 +19,6 @@ features:
 package xtox
 
 import (
-	"encoding/hex"
 	"io/ioutil"
 	"log"
 	"sync"
@@ -27,6 +26,7 @@ import (
 	"time"
 
 	tox "github.com/kitech/go-toxcore"
+	"github.com/kitech/godsts/maps/hashbidimap"
 	"github.com/kitech/godsts/maps/hashmap"
 )
 
@@ -73,15 +73,16 @@ var ctxmu sync.Mutex
 var ctxs = map[*tox.Tox]*_XTox{}
 
 type _XTox struct {
-	opts           *tox.ToxOptions
-	ctx            *ToxContext
-	t              *tox.Tox
-	oilC           chan interface{}
-	invitedGroups  *hashmap.Map
-	groupPeerKeys  *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => pubkey
-	groupPeerNames *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => name
-	groupTitles    *hashmap.Map // uint32 => string, group number => group title
-	needReconn     int32
+	opts             *tox.ToxOptions
+	ctx              *ToxContext
+	t                *tox.Tox
+	oilC             chan interface{}
+	invitedGroups    *hashbidimap.Map
+	groupIdentifiers *hashbidimap.Map
+	groupPeerKeys    *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => pubkey
+	groupPeerNames   *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => name
+	groupTitles      *hashmap.Map // uint32 => string, group number => group title
+	needReconn       int32
 }
 
 func tryNew(ctx *ToxContext) (*tox.Tox, *tox.ToxOptions) {
@@ -113,7 +114,8 @@ func tryNew(ctx *ToxContext) (*tox.Tox, *tox.ToxOptions) {
 func newXTox() *_XTox {
 	xt := &_XTox{}
 	xt.oilC = make(chan interface{}, 0)
-	xt.invitedGroups = hashmap.New()
+	xt.invitedGroups = hashbidimap.New()
+	xt.groupIdentifiers = hashbidimap.New()
 	xt.groupPeerKeys = hashmap.New()
 	xt.groupPeerNames = hashmap.New()
 	xt.groupTitles = hashmap.New()
@@ -141,7 +143,7 @@ func (this *_XTox) tryReconn() {
 
 func (this *_XTox) initCallbacks() {
 	t := this.t
-	t.CallbackConferenceInviteAdd(func(_ *tox.Tox, friendNumber uint32, itype uint8, data []byte, userData interface{}) {
+	t.CallbackConferenceInviteAdd(func(_ *tox.Tox, friendNumber uint32, itype uint8, cookie string, userData interface{}) {
 		// hdata := hex.EncodeToString(data)
 		// this.invitedGroups.Add(hdata)
 	}, nil)
@@ -198,7 +200,7 @@ func (this *_XTox) initCallbacks() {
 
 func (this *_XTox) initHooks() {
 	t := this.t
-	t.HookConferenceJoin(func(friendNumber uint32, groupNumber uint32, data []byte) {
+	t.HookConferenceJoin(func(friendNumber uint32, groupNumber uint32, cookie string) {
 		// 刚join的时候无法获取title
 		if !this.groupPeerKeys.Has(groupNumber) {
 			this.groupPeerKeys.Put(groupNumber, hashmap.New())
@@ -211,8 +213,7 @@ func (this *_XTox) initHooks() {
 		} else {
 			// this.groupPeerNames.Put(groupNumber, hashmap.New()) // 这时再清空比较好
 		}
-		hdata := hex.EncodeToString(data)
-		this.invitedGroups.Put(groupNumber, hdata)
+		this.invitedGroups.Put(groupNumber, cookie)
 		// log.Println(friendNumber, groupNumber)
 	})
 	t.HookConferenceDelete(func(groupNumber uint32) {
