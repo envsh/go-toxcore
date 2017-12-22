@@ -511,15 +511,15 @@ func NewTox(opt *ToxOptions) *Tox {
 }
 
 func (this *Tox) Kill() {
-	this.lock()
-	defer this.unlock()
-
 	if this == nil || this.toxcore == nil {
 		return
 	}
 
-	C.tox_kill(this.toxcore)
+	this.lock()
+	defer this.unlock()
+
 	cbUserDatas.del(this.toxcore)
+	C.tox_kill(this.toxcore)
 	this.toxcore = nil
 }
 
