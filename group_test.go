@@ -25,7 +25,7 @@ func TestIssue6(t *testing.T) {
 	opts2.Tcp_port = 34568
 	_t2 := NewTox(opts2)
 	log.Println(_t2)
-	_t2.CallbackGroupInviteAdd(func(_ *Tox, friendNumber uint32, itype uint8, data []byte, userData interface{}) {
+	_t2.CallbackGroupInviteAdd(func(_ *Tox, friendNumber uint32, itype uint8, data string, userData interface{}) {
 		log.Println(friendNumber, itype)
 	}, nil)
 	go func() {
