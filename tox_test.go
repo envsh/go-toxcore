@@ -661,7 +661,7 @@ func TestGroup(t *testing.T) {
 			if len(peers) != 1 {
 				t.Error("should 1")
 			}
-			if _, err = t1.t.JoinGroupChat(5, nil); err == nil {
+			if _, err = t1.t.JoinGroupChat(5, ""); err == nil {
 				t.Error("should not nil")
 			}
 			if _, err = t1.t.InviteFriend(123, gn); err == nil {
@@ -693,7 +693,7 @@ func TestGroup(t *testing.T) {
 			t1.t.FriendAddNorequest(friendId)
 		}, nil)
 
-		t1.t.CallbackGroupInvite(func(_ *Tox, friendNumber uint32, itype uint8, data []byte, ud interface{}) {
+		t1.t.CallbackGroupInvite(func(_ *Tox, friendNumber uint32, itype uint8, data string, ud interface{}) {
 			switch itype {
 			case GROUPCHAT_TYPE_TEXT:
 				_, err := t1.t.JoinGroupChat(friendNumber, data)
@@ -772,7 +772,7 @@ func TestGroup(t *testing.T) {
 			t1.t.FriendAddNorequest(friendId)
 		}, nil)
 
-		t1.t.CallbackGroupInvite(func(_ *Tox, friendNumber uint32, itype uint8, data []byte, ud interface{}) {
+		t1.t.CallbackGroupInvite(func(_ *Tox, friendNumber uint32, itype uint8, data string, ud interface{}) {
 			switch itype {
 			case GROUPCHAT_TYPE_TEXT:
 				t1.t.JoinGroupChat(friendNumber, data)
