@@ -35,6 +35,7 @@ static inline void fixnousetox() {
 import "C"
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -465,7 +466,7 @@ func (this *Tox) CallbackFileChunkRequestAdd(cbfn cb_file_chunk_request_ftype, u
 	C.tox_callback_file_chunk_request(this.toxcore, (*C.tox_file_chunk_request_cb)(C.callbackFileChunkRequestWrapperForC))
 }
 
-func NewTox(opt *ToxOptions) *Tox {
+func NewTox(opt *ToxOptions) (*Tox, error) {
 	var tox = new(Tox)
 	if opt != nil {
 		tox.opts = opt
@@ -476,11 +477,16 @@ func NewTox(opt *ToxOptions) *Tox {
 
 	var cerr C.TOX_ERR_NEW
 	var toxcore = C.tox_new(tox.toxopts, &cerr)
-	tox.toxcore = toxcore
-	if toxcore == nil {
-		log.Println(toxerr(cerr))
-		return nil
+
+	if err := ParseError(TOX_ERR_NEW, ErrorCode(cerr)); err != nil {
+		return nil, err
 	}
+
+	if toxcore == nil {
+		return nil, errors.New("something goes wrong, tox is nil")
+	}
+
+	tox.toxcore = toxcore
 	cbUserDatas.set(toxcore, tox)
 
 	//
@@ -507,7 +513,7 @@ func NewTox(opt *ToxOptions) *Tox {
 	tox.cb_file_recv_chunks = make(map[unsafe.Pointer]interface{})
 	tox.cb_file_chunk_requests = make(map[unsafe.Pointer]interface{})
 
-	return tox
+	return tox, nil
 }
 
 func (this *Tox) Kill() {
@@ -606,9 +612,10 @@ func (this *Tox) Bootstrap(addr string, port uint16, pubkey string) (bool, error
 
 	var cerr C.TOX_ERR_BOOTSTRAP
 	r := C.tox_bootstrap(this.toxcore, (*C.char)(unsafe.Pointer(&_addr[0])), _port, _cpubkey, &cerr)
-	if cerr > 0 {
-		return false, toxerr(cerr)
+	if err := ParseError(TOX_ERR_NEW, ErrorCode(cerr)); err != nil {
+		return false, err
 	}
+
 	return bool(r), nil
 }
 
@@ -640,9 +647,10 @@ func (this *Tox) FriendAdd(friendId string, message string) (uint32, error) {
 	var cerr C.TOX_ERR_FRIEND_ADD
 	r := C.tox_friend_add(this.toxcore, friendId_p,
 		(*C.uint8_t)(&cmessage[0]), C.size_t(len(message)), &cerr)
-	if cerr > 0 {
-		return uint32(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_ADD, ErrorCode(cerr)); err != nil {
+		return 0, err
 	}
+
 	return uint32(r), nil
 }
 
@@ -658,9 +666,10 @@ func (this *Tox) FriendAddNorequest(friendId string) (uint32, error) {
 
 	var cerr C.TOX_ERR_FRIEND_ADD
 	r := C.tox_friend_add_norequest(this.toxcore, friendId_p, &cerr)
-	if cerr > 0 {
-		return uint32(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_ADD, ErrorCode(cerr)); err != nil {
+		return uint32(r), err
 	}
+
 	return uint32(r), nil
 }
 
@@ -673,9 +682,10 @@ func (this *Tox) FriendByPublicKey(pubkey string) (uint32, error) {
 
 	var cerr C.TOX_ERR_FRIEND_BY_PUBLIC_KEY
 	r := C.tox_friend_by_public_key(this.toxcore, pubkey_p, &cerr)
-	if cerr != C.TOX_ERR_FRIEND_BY_PUBLIC_KEY_OK {
-		return uint32(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_BY_PUBLIC_KEY, ErrorCode(cerr)); err != nil {
+		return uint32(r), err
 	}
+
 	return uint32(r), nil
 }
 
@@ -685,10 +695,11 @@ func (this *Tox) FriendGetPublicKey(friendNumber uint32) (string, error) {
 	var pubkey_p = (*C.uint8_t)(&pubkey_b[0])
 
 	var cerr C.TOX_ERR_FRIEND_GET_PUBLIC_KEY
-	r := C.tox_friend_get_public_key(this.toxcore, _fn, pubkey_p, &cerr)
-	if cerr > 0 || bool(r) == false {
-		return "", toxerr(cerr)
+	C.tox_friend_get_public_key(this.toxcore, _fn, pubkey_p, &cerr)
+	if err := ParseError(TOX_ERR_FRIEND_GET_PUBLIC_KEY, ErrorCode(cerr)); err != nil {
+		return "", err
 	}
+
 	pubkey_h := hex.EncodeToString(pubkey_b)
 	pubkey_h = strings.ToUpper(pubkey_h)
 	return pubkey_h, nil
@@ -702,9 +713,10 @@ func (this *Tox) FriendDelete(friendNumber uint32) (bool, error) {
 
 	var cerr C.TOX_ERR_FRIEND_DELETE
 	r := C.tox_friend_delete(this.toxcore, _fn, &cerr)
-	if cerr > 0 {
-		return bool(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_BY_PUBLIC_KEY, ErrorCode(cerr)); err != nil {
+		return false, err
 	}
+
 	return bool(r), nil
 }
 
@@ -713,8 +725,8 @@ func (this *Tox) FriendGetConnectionStatus(friendNumber uint32) (int, error) {
 
 	var cerr C.TOX_ERR_FRIEND_QUERY
 	r := C.tox_friend_get_connection_status(this.toxcore, _fn, &cerr)
-	if cerr > 0 {
-		return int(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_QUERY, ErrorCode(cerr)); err != nil {
+		return 0, err
 	}
 	return int(r), nil
 }
@@ -737,8 +749,8 @@ func (this *Tox) FriendSendMessage(friendNumber uint32, message string) (uint32,
 	var mtype C.TOX_MESSAGE_TYPE = C.TOX_MESSAGE_TYPE_NORMAL
 	var cerr C.TOX_ERR_FRIEND_SEND_MESSAGE
 	r := C.tox_friend_send_message(this.toxcore, _fn, mtype, (*C.uint8_t)(&_message[0]), _length, &cerr)
-	if cerr != C.TOX_ERR_FRIEND_SEND_MESSAGE_OK {
-		return uint32(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_SEND_MESSAGE, ErrorCode(cerr)); err != nil {
+		return 0, err
 	}
 	return uint32(r), nil
 }
@@ -754,8 +766,8 @@ func (this *Tox) FriendSendAction(friendNumber uint32, action string) (uint32, e
 	var mtype C.TOX_MESSAGE_TYPE = C.TOX_MESSAGE_TYPE_ACTION
 	var cerr C.TOX_ERR_FRIEND_SEND_MESSAGE
 	r := C.tox_friend_send_message(this.toxcore, _fn, mtype, (*C.uint8_t)(&_action[0]), _length, &cerr)
-	if cerr > 0 {
-		return uint32(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_SEND_MESSAGE, ErrorCode(cerr)); err != nil {
+		return 0, err
 	}
 	return uint32(r), nil
 }
@@ -769,8 +781,8 @@ func (this *Tox) SelfSetName(name string) error {
 
 	var cerr C.TOX_ERR_SET_INFO
 	C.tox_self_set_name(this.toxcore, (*C.uint8_t)(&_name[0]), _length, &cerr)
-	if cerr > 0 {
-		return toxerr(cerr)
+	if err := ParseError(TOX_ERR_SET_INFO, ErrorCode(cerr)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -787,12 +799,12 @@ func (this *Tox) FriendGetName(friendNumber uint32) (string, error) {
 	var _fn = C.uint32_t(friendNumber)
 
 	var cerr C.TOX_ERR_FRIEND_QUERY
-	nlen := C.tox_friend_get_name_size(this.toxcore, _fn, &cerr)
+	nlen := C.tox_friend_get_name_size(this.toxcore, _fn, &cerr) // TODO: unhandled error?
 	_name := make([]byte, nlen)
 
-	r := C.tox_friend_get_name(this.toxcore, _fn, (*C.uint8_t)(safeptr(_name)), &cerr)
-	if !bool(r) {
-		return "", toxerr(cerr)
+	C.tox_friend_get_name(this.toxcore, _fn, (*C.uint8_t)(safeptr(_name)), &cerr)
+	if err := ParseError(TOX_ERR_FRIEND_QUERY, ErrorCode(cerr)); err != nil {
+		return "", err
 	}
 	return string(_name), nil
 }
@@ -802,9 +814,10 @@ func (this *Tox) FriendGetNameSize(friendNumber uint32) (int, error) {
 
 	var cerr C.TOX_ERR_FRIEND_QUERY
 	r := C.tox_friend_get_name_size(this.toxcore, _fn, &cerr)
-	if cerr > 0 {
-		return int(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_QUERY, ErrorCode(cerr)); err != nil {
+		return 0, err
 	}
+
 	return int(r), nil
 }
 
@@ -822,9 +835,10 @@ func (this *Tox) SelfSetStatusMessage(status string) (bool, error) {
 
 	var cerr C.TOX_ERR_SET_INFO
 	r := C.tox_self_set_status_message(this.toxcore, (*C.uint8_t)(&_status[0]), _length, &cerr)
-	if cerr > 0 {
-		return false, toxerr(cerr)
+	if err := ParseError(TOX_ERR_SET_INFO, ErrorCode(cerr)); err != nil {
+		return false, err
 	}
+
 	return bool(r), nil
 }
 
@@ -838,8 +852,8 @@ func (this *Tox) FriendGetStatusMessageSize(friendNumber uint32) (int, error) {
 
 	var cerr C.TOX_ERR_FRIEND_QUERY
 	r := C.tox_friend_get_status_message_size(this.toxcore, _fn, &cerr)
-	if cerr > 0 {
-		return int(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_QUERY, ErrorCode(cerr)); err != nil {
+		return 0, err
 	}
 	return int(r), nil
 }
@@ -852,17 +866,17 @@ func (this *Tox) SelfGetStatusMessageSize() int {
 func (this *Tox) FriendGetStatusMessage(friendNumber uint32) (string, error) {
 	var _fn = C.uint32_t(friendNumber)
 	var cerr C.TOX_ERR_FRIEND_QUERY
-	len := C.tox_friend_get_status_message_size(this.toxcore, _fn, &cerr)
-	if cerr > 0 {
-		return "", toxerr(cerr)
+	len := C.tox_friend_get_status_message_size(this.toxcore, _fn, &cerr) // TODO: error type?
+	if err := ParseError(TOX_ERR_FRIEND_QUERY, ErrorCode(cerr)); err != nil {
+		return "", err
 	}
 
 	_buf := make([]byte, len)
 
 	cerr = 0
-	r := C.tox_friend_get_status_message(this.toxcore, _fn, (*C.uint8_t)(safeptr(_buf)), &cerr)
-	if !bool(r) || cerr > 0 {
-		return "", toxerr(cerr)
+	C.tox_friend_get_status_message(this.toxcore, _fn, (*C.uint8_t)(safeptr(_buf)), &cerr)
+	if err := ParseError(TOX_ERR_FRIEND_QUERY, ErrorCode(cerr)); err != nil {
+		return "", err
 	}
 	return string(_buf[:]), nil
 }
@@ -880,9 +894,10 @@ func (this *Tox) FriendGetStatus(friendNumber uint32) (int, error) {
 
 	var cerr C.TOX_ERR_FRIEND_QUERY
 	r := C.tox_friend_get_status(this.toxcore, _fn, &cerr)
-	if cerr > 0 {
-		return int(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_QUERY, ErrorCode(cerr)); err != nil {
+		return 0, err
 	}
+
 	return int(r), nil
 }
 
@@ -896,9 +911,10 @@ func (this *Tox) FriendGetLastOnline(friendNumber uint32) (uint64, error) {
 
 	var cerr C.TOX_ERR_FRIEND_GET_LAST_ONLINE
 	r := C.tox_friend_get_last_online(this.toxcore, _fn, &cerr)
-	if cerr > 0 {
-		return uint64(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_GET_LAST_ONLINE, ErrorCode(cerr)); err != nil {
+		return 0, err
 	}
+
 	return uint64(r), nil
 }
 
@@ -911,8 +927,8 @@ func (this *Tox) SelfSetTyping(friendNumber uint32, typing bool) (bool, error) {
 
 	var cerr C.TOX_ERR_SET_TYPING
 	r := C.tox_self_set_typing(this.toxcore, _fn, _typing, &cerr)
-	if cerr > 0 {
-		return bool(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_SET_TYPING, ErrorCode(cerr)); err != nil {
+		return false, err
 	}
 	return bool(r), nil
 }
@@ -922,8 +938,8 @@ func (this *Tox) FriendGetTyping(friendNumber uint32) (bool, error) {
 
 	var cerr C.TOX_ERR_FRIEND_QUERY
 	r := C.tox_friend_get_typing(this.toxcore, _fn, &cerr)
-	if cerr > 0 {
-		return bool(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FRIEND_QUERY, ErrorCode(cerr)); err != nil {
+		return false, err
 	}
 	return bool(r), nil
 }
@@ -987,9 +1003,9 @@ func (this *Tox) FriendSendLossyPacket(friendNumber uint32, data string) error {
 	var _length = C.size_t(len(data))
 
 	var cerr C.TOX_ERR_FRIEND_CUSTOM_PACKET
-	r := C.tox_friend_send_lossy_packet(this.toxcore, _fn, (*C.uint8_t)(&_data[0]), _length, &cerr)
-	if !r || cerr != C.TOX_ERR_FRIEND_CUSTOM_PACKET_OK {
-		return toxerr(cerr)
+	C.tox_friend_send_lossy_packet(this.toxcore, _fn, (*C.uint8_t)(&_data[0]), _length, &cerr)
+	if err := ParseError(TOX_ERR_FRIEND_CUSTOM_PACKET, ErrorCode(cerr)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1003,9 +1019,9 @@ func (this *Tox) FriendSendLosslessPacket(friendNumber uint32, data string) erro
 	var _length = C.size_t(len(data))
 
 	var cerr C.TOX_ERR_FRIEND_CUSTOM_PACKET
-	r := C.tox_friend_send_lossless_packet(this.toxcore, _fn, (*C.uint8_t)(&_data[0]), _length, &cerr)
-	if !r || cerr != C.TOX_ERR_FRIEND_CUSTOM_PACKET_OK {
-		return toxerr(cerr)
+	C.tox_friend_send_lossless_packet(this.toxcore, _fn, (*C.uint8_t)(&_data[0]), _length, &cerr)
+	if err := ParseError(TOX_ERR_FRIEND_CUSTOM_PACKET, ErrorCode(cerr)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1026,8 +1042,8 @@ func (this *Tox) FileControl(friendNumber uint32, fileNumber uint32, control int
 	var cerr C.TOX_ERR_FILE_CONTROL
 	r := C.tox_file_control(this.toxcore, C.uint32_t(friendNumber), C.uint32_t(fileNumber),
 		C.TOX_FILE_CONTROL(control), &cerr)
-	if cerr > 0 {
-		return false, toxerr(cerr)
+	if err := ParseError(TOX_ERR_FILE_CONTROL, ErrorCode(cerr)); err != nil {
+		return false, err
 	}
 	return bool(r), nil
 }
@@ -1044,8 +1060,8 @@ func (this *Tox) FileSend(friendNumber uint32, kind uint32, fileSize uint64, fil
 	var cerr C.TOX_ERR_FILE_SEND
 	r := C.tox_file_send(this.toxcore, C.uint32_t(friendNumber), C.uint32_t(kind), C.uint64_t(fileSize),
 		nil, (*C.uint8_t)(&_fileName[0]), C.size_t(len(fileName)), &cerr)
-	if cerr > 0 {
-		return uint32(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FILE_SEND, ErrorCode(cerr)); err != nil {
+		return 0, err
 	}
 	return uint32(r), nil
 }
@@ -1060,8 +1076,8 @@ func (this *Tox) FileSendChunk(friendNumber uint32, fileNumber uint32, position 
 	var cerr C.TOX_ERR_FILE_SEND_CHUNK
 	r := C.tox_file_send_chunk(this.toxcore, C.uint32_t(friendNumber), C.uint32_t(fileNumber),
 		C.uint64_t(position), (*C.uint8_t)(&data[0]), C.size_t(len(data)), &cerr)
-	if cerr > 0 {
-		return bool(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_FILE_SEND_CHUNK, ErrorCode(cerr)); err != nil {
+		return false, err
 	}
 	return bool(r), nil
 }
@@ -1073,8 +1089,8 @@ func (this *Tox) FileSeek(friendNumber uint32, fileNumber uint32, position uint6
 	var cerr C.TOX_ERR_FILE_SEEK
 	r := C.tox_file_seek(this.toxcore, C.uint32_t(friendNumber), C.uint32_t(fileNumber),
 		C.uint64_t(position), &cerr)
-	if cerr > 0 {
-		return false, toxerr(cerr)
+	if err := ParseError(TOX_ERR_FILE_SEEK, ErrorCode(cerr)); err != nil {
+		return false, err
 	}
 	return bool(r), nil
 }
@@ -1083,10 +1099,10 @@ func (this *Tox) FileGetFileId(friendNumber uint32, fileNumber uint32) (string, 
 	var cerr C.TOX_ERR_FILE_GET
 	var fileId_b = make([]byte, C.TOX_FILE_ID_LENGTH)
 
-	r := C.tox_file_get_file_id(this.toxcore, C.uint32_t(fileNumber), C.uint32_t(fileNumber),
+	C.tox_file_get_file_id(this.toxcore, C.uint32_t(fileNumber), C.uint32_t(fileNumber),
 		(*C.uint8_t)(&fileId_b[0]), &cerr)
-	if cerr > 0 || bool(r) == false {
-		return "", toxerr(cerr)
+	if err := ParseError(TOX_ERR_FILE_GET, ErrorCode(cerr)); err != nil {
+		return "", err
 	}
 
 	var fileId_h = strings.ToUpper(hex.EncodeToString(fileId_b))
@@ -1112,8 +1128,8 @@ func (this *Tox) AddTcpRelay(addr string, port uint16, pubkey string) (bool, err
 
 	var cerr C.TOX_ERR_BOOTSTRAP
 	r := C.tox_add_tcp_relay(this.toxcore, _addr, _port, _pubkey, &cerr)
-	if cerr > 0 {
-		return bool(r), toxerr(cerr)
+	if err := ParseError(TOX_ERR_BOOTSTRAP, ErrorCode(cerr)); err != nil {
+		return false, err
 	}
 	return bool(r), nil
 }
