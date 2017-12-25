@@ -106,12 +106,13 @@ func TestCreate(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
+
+		dat := tox1.GetSavedata()
 		tox1.Kill()
 
 		opts := NewToxOptions()
 		opts.Savedata_data = append([]byte("set-broken"), dat...)
 		opts.Savedata_type = SAVEDATA_TYPE_TOX_SAVE
-
 		tox2, err := NewTox(opts)
 		if err == nil {
 			t.Errorf("broken profile loaded")
