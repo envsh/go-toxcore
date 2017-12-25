@@ -180,13 +180,13 @@ func ConferenceGetByCookie(t *tox.Tox, cookie string) (groupNumber uint32, found
 	return
 }
 
-func ConferenceGetIdentifier(t *tox.Tox, groupNumber uint32) (cookie string, found bool) {
+func ConferenceGetIdentifier(t *tox.Tox, groupNumber uint32) (groupId string, found bool) {
 	ctxmu.Lock()
 	defer ctxmu.Unlock()
 
 	xt := ctxs[t]
-	if cookiex, found := xt.groupIdentifiers.Get(groupNumber); found {
-		return cookiex.(string), found
+	if groupIdx, found := xt.groupIdentifiers.Get(groupNumber); found {
+		return groupIdx.(string), found
 	}
 	return
 }
@@ -200,6 +200,17 @@ func ConferenceGetByIdentifier(t *tox.Tox, cookie string) (groupNumber uint32, f
 		return groupNumberx.(uint32), found
 	}
 	return
+}
+
+func ConferenceCookieToIdentifier(cookie string) string {
+	if len(cookie) >= 6 {
+		return cookie[6:]
+	}
+	return ""
+}
+
+func ConferenceIdIsEmpty(groupId string) bool {
+	return groupId == "" || strings.Replace(groupId, "0", "", -1) == ""
 }
 
 func Connect(this *tox.Tox) error {
