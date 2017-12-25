@@ -106,21 +106,15 @@ func TestCreate(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-
-		dat := tox1.GetSavedata()
-		addr := tox1.SelfGetAddress()
 		tox1.Kill()
 
 		opts := NewToxOptions()
 		opts.Savedata_data = append([]byte("set-broken"), dat...)
 		opts.Savedata_type = SAVEDATA_TYPE_TOX_SAVE
-		tox2, err := NewTox(opts)
-		if err != nil {
-			t.Error(err)
-		}
 
-		if addr == tox2.SelfGetAddress() {
-			t.Error("must !=", addr, tox2.SelfGetAddress())
+		tox2, err := NewTox(opts)
+		if err == nil {
+			t.Errorf("broken profile loaded")
 		}
 		tox2.Kill()
 	})
