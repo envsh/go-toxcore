@@ -11,7 +11,12 @@ func TestIssue6(t *testing.T) {
 	opts := NewToxOptions()
 	opts.ThreadSafe = true
 	opts.Tcp_port = 34567
-	_t1 := NewTox(opts)
+	_t1, err := NewTox(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer _t1.Kill()
+
 	log.Println(_t1)
 	go func() {
 		for {
@@ -23,7 +28,12 @@ func TestIssue6(t *testing.T) {
 	opts2 := NewToxOptions()
 	opts2.ThreadSafe = true
 	opts2.Tcp_port = 34568
-	_t2 := NewTox(opts2)
+	_t2, err := NewTox(opts2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer _t2.Kill()
+
 	log.Println(_t2)
 	_t2.CallbackGroupInviteAdd(func(_ *Tox, friendNumber uint32, itype uint8, data string, userData interface{}) {
 		log.Println(friendNumber, itype)

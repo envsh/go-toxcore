@@ -10,7 +10,21 @@ import (
 	"github.com/go-clang/v3.9/clang"
 )
 
+type ToxError struct {
+	Code        int64
+	Name        string
+	Description string
+}
+
+var (
+	errorGroups    []string
+	errorCodeNames map[string][]ToxError
+)
+
 func main() {
+	errorGroups = make([]string, 0)
+	errorCodeNames = make(map[string][]ToxError)
+
 	idx := clang.NewIndex(0, 1)
 	defer idx.Dispose()
 
@@ -23,19 +37,13 @@ func main() {
 	cmdArgs := []string{
 		"-std=c99",
 		"-I/usr/include/",
-		"-I/usr/lib/gcc/x86_64-pc-linux-gnu/7.2.0/include"}
+		"-I/usr/lib/gcc/x86_64-pc-linux-gnu/7.2.1/include"}
 	tu := idx.ParseTranslationUnit("/usr/include/tox/tox.h", cmdArgs, nil, 0)
 	defer tu.Dispose()
 
 	for _, d := range tu.Diagnostics() {
 		log.Println("PROBLEM:", d.Spelling())
 	}
-
-	fmt.Fprintf(os.Stdout, "package tox\n")
-	fmt.Fprintf(os.Stdout, "/*\n")
-	fmt.Fprintf(os.Stdout, "#include \"tox/tox.h\"\n")
-	fmt.Fprintf(os.Stdout, "*/\n")
-	fmt.Fprintf(os.Stdout, "import \"C\"\n")
 
 	var enumDecls = make(map[uint32]bool)
 	var enumConstDecls = make(map[uint32]bool)
@@ -45,7 +53,6 @@ func main() {
 	tuc.Visit(func(cursor, parent clang.Cursor) (status clang.ChildVisitResult) {
 		switch cursor.Kind() {
 		case clang.Cursor_EnumDecl:
-			//  log.Println(cursor.BriefCommentText())
 			if !strings.HasPrefix(cursor.Spelling(), "TOX_ERR_") {
 				break
 			}
@@ -53,11 +60,8 @@ func main() {
 				break
 			}
 			enumDecls[cursor.HashCursor()] = true
-			curEnumName = cursor.Spelling()[3:]
-			log.Println(cursor.Type().Kind().String(), cursor.Type().Spelling())
-			fmt.Fprintf(os.Stdout, "\nvar %sS = make(map[int]string)\n", cursor.Spelling()[3:])
-			fmt.Fprintf(os.Stdout, "func init(){%sS[%d] = \"TE%02d: %s\"}\n", curEnumName, -1, -1, curEnumName)
-
+			curEnumName = cursor.Spelling()
+			errorGroups = append(errorGroups, curEnumName)
 		case clang.Cursor_EnumConstantDecl:
 			if !strings.HasPrefix(cursor.Spelling(), "TOX_ERR_") {
 				break
@@ -67,8 +71,6 @@ func main() {
 			}
 			enumConstDecls[cursor.HashCursor()] = true
 
-			// log.Println(cursor.BriefCommentText())
-			// log.Println(cursor.Kind().String(), cursor.Type().Kind().String(), cursor.Type().Spelling(), cursor.Spelling())
 			constComment := cursor.BriefCommentText()
 			constComment = strings.Replace(constComment, "\"", "\\\"", -1)
 			constName := cursor.Spelling()
@@ -77,10 +79,9 @@ func main() {
 			enumName = curEnumName
 			constValue := cursor.EnumConstantDeclValue()
 			if false {
-				log.Println(enumName, constName, constValue, constComment)
+				//log.Println(enumName, constName, constValue, constComment)
 			}
-			fmt.Fprintf(os.Stdout, "const %s = int(C.%s) // %d\n", constName[4:], constName, constValue)
-			fmt.Fprintf(os.Stdout, "func init(){%sS[%s] = \"TE%02d: %s\"}\n", enumName, constName[4:], constValue, constComment)
+			errorCodeNames[enumName] = append(errorCodeNames[enumName], ToxError{Code: constValue, Name: constName, Description: constComment})
 
 		default:
 			// log.Println(cursor.Kind().String(), cursor.Type().Kind().String(), cursor.Type().Spelling(), cursor.Spelling())
@@ -88,9 +89,60 @@ func main() {
 
 		return clang.ChildVisit_Recurse
 	})
-}
 
-/*
-结构：
-var _enumName_S map[int]string
-*/
+	// Out file
+
+	fmt.Fprintln(os.Stdout, "package tox")
+	fmt.Fprintln(os.Stdout, "/*")
+	fmt.Fprintln(os.Stdout, "#include \"tox/tox.h\"")
+	fmt.Fprintln(os.Stdout, "*/")
+	fmt.Fprintln(os.Stdout, `import "C"`)
+	fmt.Fprintln(os.Stdout, `import "errors"`)
+	fmt.Fprintln(os.Stdout, "")
+
+	fmt.Fprintln(os.Stdout, "type ErrorGroup string")
+	fmt.Fprintln(os.Stdout, "type ErrorCode int", "\n")
+
+	fmt.Fprintln(os.Stdout, "const (")
+
+	for _, k := range errorGroups {
+		fmt.Printf("\t%s = ErrorGroup(\"%s\")\n", k, k)
+	}
+
+	fmt.Fprintln(os.Stdout, ")\n")
+
+	fmt.Fprintln(os.Stdout, "const (")
+	for _, k := range errorGroups {
+		for _, v2 := range errorCodeNames[k] {
+			fmt.Printf("\t%s = ErrorCode(C.%s)\n", v2.Name, v2.Name)
+		}
+	}
+	fmt.Fprintln(os.Stdout, ")\n")
+
+	fmt.Fprintln(os.Stdout, "type errorHolder map[ErrorGroup]map[ErrorCode]error", "\n")
+
+	fmt.Fprintln(os.Stdout, `// ParseError returns go-style tox error`)
+	fmt.Fprintln(os.Stdout, "func ParseError(group ErrorGroup, code ErrorCode) error {\n\treturn toxErrors[group][code]\n}\n")
+
+	fmt.Fprintln(os.Stdout, "var toxErrors errorHolder", "\n")
+
+	fmt.Fprintln(os.Stdout, "func init(){")
+	fmt.Fprintln(os.Stdout, "\ttoxErrors = make(errorHolder)\n")
+	for _, k := range errorGroups {
+		fmt.Fprintf(os.Stdout, "\ttoxErrors[%s] = make(map[ErrorCode]error)\n", k)
+	}
+
+	fmt.Fprintln(os.Stdout, "")
+
+	for _, k := range errorGroups {
+		for _, v2 := range errorCodeNames[k] {
+			if v2.Code == 0 {
+				fmt.Printf("\ttoxErrors[%s][%s] = nil // %s\n", k, v2.Name, v2.Description)
+			} else {
+				fmt.Printf("\ttoxErrors[%s][%s] = errors.New(\"%s\")\n", k, v2.Name, v2.Description)
+			}
+		}
+	}
+
+	fmt.Fprintln(os.Stdout, "}\n")
+}
