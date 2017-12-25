@@ -215,9 +215,24 @@ func (this *_XTox) initHooks() {
 		}
 		this.invitedGroups.Put(groupNumber, cookie)
 		// log.Println(friendNumber, groupNumber)
+
+		groupId := ConferenceCookieToIdentifier(cookie)
+		if !ConferenceIdIsEmpty(groupId) {
+			this.groupIdentifiers.Put(groupNumber, groupId)
+			this.groupIdentifiers.Put(groupId, groupNumber)
+		}
 	})
 	t.HookConferenceDelete(func(groupNumber uint32) {
-		this.invitedGroups.Remove(groupNumber)
+		time.AfterFunc(3*time.Minute, func() {
+			if value, found := this.invitedGroups.Get(groupNumber); found {
+				this.invitedGroups.Remove(groupNumber)
+				this.invitedGroups.RemoveValue(value)
+			}
+			if value, found := this.groupIdentifiers.Get(groupNumber); found {
+				this.groupIdentifiers.Remove(groupNumber)
+				this.groupIdentifiers.RemoveValue(value)
+			}
+		})
 	})
 	t.HookConferenceNew(func(groupNumber uint32) {
 		if !this.groupPeerKeys.Has(groupNumber) {
@@ -238,6 +253,11 @@ func (this *_XTox) initHooks() {
 			valuex.(*hashmap.Map).Put(0, t.SelfGetName())
 		}
 
+		grpid, err := t.ConferenceGetIdentifier(groupNumber)
+		if err == nil {
+			this.groupIdentifiers.Put(groupNumber, grpid)
+			this.groupIdentifiers.Put(grpid, groupNumber)
+		}
 	})
 	t.HookConferenceSetTitle(func(groupNumber uint32, title string) {
 		this.groupTitles.Put(groupNumber, title)
