@@ -1,6 +1,7 @@
 package tox
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"go/ast"
@@ -62,7 +63,6 @@ func TestCreate(t *testing.T) {
 			t.Errorf("should [non-nil, nil], got [%v, %v]", err1, err2)
 		}
 		tox1.Kill()
-		//tox2.Kill()
 	})
 	t.Run("save profile", func(t *testing.T) {
 		tox, err := NewTox(nil)
@@ -96,7 +96,8 @@ func TestCreate(t *testing.T) {
 		}
 
 		dat2 := tox2.GetSavedata()
-		if len(dat2) != len(dat) || string(dat2) != string(dat) {
+
+		if bytes.Compare(dat, dat2) != 0 {
 			t.Error("must ==")
 		}
 		tox2.Kill()
@@ -144,6 +145,7 @@ func TestCreate(t *testing.T) {
 		if tox2.SelfGetAddress()[0:PUBLIC_KEY_SIZE*2] != addr[0:PUBLIC_KEY_SIZE*2] {
 			t.Error("must =", tox2.SelfGetAddress(), addr)
 		}
+		tox2.Kill()
 	})
 	t.Run("destroy", func(t *testing.T) {
 		tox, err := NewTox(nil)
@@ -300,9 +302,11 @@ func (this *MiniTox) bootstrap() {
 		port, err := strconv.Atoi(bsnodes[1+idx*3])
 		_, err = this.t.Bootstrap(bsnodes[0+idx*3], uint16(port), bsnodes[2+idx*3])
 		if err != nil {
+			// TODO: handle error
 		}
 		_, err = this.t.AddTcpRelay(bsnodes[0+idx*3], uint16(port), bsnodes[2+idx*3])
 		if err != nil {
+			// TODO: handle error
 		}
 	}
 }
@@ -369,7 +373,7 @@ func TestFriend(t *testing.T) {
 		t1.t.CallbackFriendRequest(func(_ *Tox, friendId, msg string, d interface{}) {
 			_, err := t1.t.FriendAddNorequest(friendId)
 			if err != nil {
-				t.Fail()
+				t.Error()
 			}
 		}, nil)
 
@@ -615,7 +619,7 @@ func TestGroup(t *testing.T) {
 		if err != nil || gn != 0 {
 			t.Error(err)
 		}
-		_, err = t1.t.DelGroupChat(gn)
+		err = t1.t.DelGroupChat(gn)
 		if err != nil {
 			t.Error(err)
 		}
@@ -632,7 +636,7 @@ func TestGroup(t *testing.T) {
 				t.Error(gn, idx)
 			}
 			title := fmt.Sprintf("group%d", idx)
-			_, err = t1.t.GroupSetTitle(gn, title)
+			err = t1.t.GroupSetTitle(gn, title)
 			if err != nil {
 				t.Error(err)
 			}
@@ -641,7 +645,7 @@ func TestGroup(t *testing.T) {
 				t.Error(err)
 			}
 			if ntitle != title {
-				t.Error(ntitle, title)
+				t.Errorf(`expected title "%s", got "%s"`, title, ntitle)
 			}
 			names := t1.t.GroupGetNames(gn)
 			if len(names) != 1 {
@@ -681,11 +685,11 @@ func TestGroup(t *testing.T) {
 			if t1.t.GroupPeerNumberIsOurs(gn, 789) {
 				t.Error("not ours")
 			}
-			_, err = t1.t.GroupActionSend(gn, "abc")
+			err = t1.t.GroupActionSend(gn, "abc")
 			if err == nil {
 				t.Error("should not nil")
 			}
-			_, err = t1.t.GroupMessageSend(gn, "abc")
+			err = t1.t.GroupMessageSend(gn, "abc")
 			if err == nil {
 				t.Error("should not nil")
 			}
@@ -696,7 +700,7 @@ func TestGroup(t *testing.T) {
 			if _, err = t1.t.JoinGroupChat(5, ""); err == nil {
 				t.Error("should not nil")
 			}
-			if _, err = t1.t.InviteFriend(123, gn); err == nil {
+			if err = t1.t.InviteFriend(123, gn); err == nil {
 				t.Error("should nil")
 			}
 			if cnt := t1.t.CountChatList(); int(cnt) != idx+1 {
@@ -742,7 +746,7 @@ func TestGroup(t *testing.T) {
 
 		groupNameChangeTimes := 0
 		t2.t.CallbackGroupNameListChange(func(_ *Tox, groupNumber int, peerNumber int, change uint8, ud interface{}) {
-			groupNameChangeTimes += 1
+			groupNameChangeTimes++
 		}, nil)
 
 		go t1.Iterate()
@@ -759,16 +763,26 @@ func TestGroup(t *testing.T) {
 			return t1.t.SelfGetFriendListSize() == 1
 		}, 100)
 
-		fn, _ := t2.t.FriendByPublicKey(t1.t.SelfGetPublicKey())
-		gn, _ := t2.t.AddGroupChat()
+		fn, err := t2.t.FriendByPublicKey(t1.t.SelfGetPublicKey())
+		if err != nil {
+			t.Error(err)
+		}
+		gn, err := t2.t.AddGroupChat()
+		if err != nil {
+			t.Error(err)
+		}
 
 		// must wait friend online and can call InviteFriend
 		waitcond(func() bool {
-			st, _ := t2.t.FriendGetConnectionStatus(fn)
+			st, err := t2.t.FriendGetConnectionStatus(fn)
+			if err != nil {
+				t.Error(err)
+			}
+
 			return st > CONNECTION_NONE
 		}, 100)
 
-		_, err = t2.t.InviteFriend(fn, gn)
+		err = t2.t.InviteFriend(fn, gn)
 		if err != nil {
 			t.Error(err)
 		}
@@ -782,10 +796,10 @@ func TestGroup(t *testing.T) {
 			t.Error("must 1 chat", t2.t.CountChatList())
 		}
 
-		if _, err := t1.t.DelGroupChat(gn); err != nil {
+		if err := t1.t.DelGroupChat(gn); err != nil {
 			t.Error(err)
 		}
-		if _, err := t2.t.DelGroupChat(gn); err != nil {
+		if err := t2.t.DelGroupChat(gn); err != nil {
 			t.Error(err)
 		}
 
@@ -832,8 +846,14 @@ func TestGroup(t *testing.T) {
 			return t1.t.SelfGetFriendListSize() == 1
 		}, 100)
 
-		fn, _ := t2.t.FriendByPublicKey(t1.t.SelfGetPublicKey())
-		gn, _ := t2.t.AddGroupChat()
+		fn, err := t2.t.FriendByPublicKey(t1.t.SelfGetPublicKey())
+		if err != nil {
+			t.Error(err)
+		}
+		gn, err := t2.t.AddGroupChat()
+		if err != nil {
+			t.Error(err)
+		}
 
 		// must wait friend online and can call InviteFriend
 		waitcond(func() bool {
@@ -841,7 +861,7 @@ func TestGroup(t *testing.T) {
 			return st > CONNECTION_NONE
 		}, 100)
 
-		_, err = t2.t.InviteFriend(fn, gn)
+		err = t2.t.InviteFriend(fn, gn)
 		if err != nil {
 			t.Error(err)
 		}
@@ -854,17 +874,17 @@ func TestGroup(t *testing.T) {
 			return t2.t.GroupNumberPeers(gn) == 2
 		}, 10)
 
-		if _, err := t2.t.GroupMessageSend(gn, "foo123"); err != nil {
+		if err := t2.t.GroupMessageSend(gn, "foo123"); err != nil {
 			t.Error(err)
 		}
-		if _, err := t2.t.GroupActionSend(gn, "bar123"); err != nil {
+		if err := t2.t.GroupActionSend(gn, "bar123"); err != nil {
 			t.Error(err)
 		}
 		waitcond(func() bool {
 			return len(recved_msg) > 0 && len(recved_act) > 0
 		}, 10)
 		if recved_msg != "foo123" || recved_act != "bar123" {
-			t.Error(recved_msg, recved_act)
+			t.Errorf(`expected "%s" and "%s", got "%s" and "%s"`, "foo123", "bar123", recved_msg, recved_act)
 		}
 	})
 }
@@ -894,12 +914,12 @@ func TestFile(t *testing.T) {
 
 	t1.t.CallbackFileRecv(func(_ *Tox, friendNumber uint32, fileNumber uint32,
 		kind uint32, fileSize uint64, fileName string, d interface{}) {
-		log.Println(fileNumber, fileSize, fileName)
-		_, err := t1.t.FileSeek(friendNumber, fileNumber, 15)
+		t.Log(fileNumber, fileSize, fileName)
+		err := t1.t.FileSeek(friendNumber, fileNumber, 15)
 		if err != nil {
 			t.Error(err)
 		}
-		_, err = t1.t.FileControl(friendNumber, fileNumber, FILE_CONTROL_RESUME)
+		err = t1.t.FileControl(friendNumber, fileNumber, FILE_CONTROL_RESUME)
 		if err != nil {
 			t.Error(err)
 		}

@@ -8,19 +8,20 @@ import (
 
 // issue #6
 func TestIssue6(t *testing.T) {
-	opts := NewToxOptions()
-	opts.ThreadSafe = true
-	opts.Tcp_port = 34567
-	_t1, err := NewTox(opts)
+	testRunning := true
+
+	opts1 := NewToxOptions()
+	opts1.ThreadSafe = true
+	opts1.Tcp_port = 34567
+	tox1, err := NewTox(opts1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer _t1.Kill()
+	defer tox1.Kill()
 
-	log.Println(_t1)
 	go func() {
-		for {
-			_t1.Iterate()
+		for testRunning {
+			tox1.Iterate()
 			time.Sleep(300 * time.Millisecond)
 		}
 	}()
@@ -28,31 +29,31 @@ func TestIssue6(t *testing.T) {
 	opts2 := NewToxOptions()
 	opts2.ThreadSafe = true
 	opts2.Tcp_port = 34568
-	_t2, err := NewTox(opts2)
+	tox2, err := NewTox(opts2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer _t2.Kill()
+	defer tox2.Kill()
 
-	log.Println(_t2)
-	_t2.CallbackGroupInviteAdd(func(_ *Tox, friendNumber uint32, itype uint8, data string, userData interface{}) {
+	tox2.CallbackGroupInviteAdd(func(_ *Tox, friendNumber uint32, itype uint8, data string, userData interface{}) {
 		log.Println(friendNumber, itype)
 	}, nil)
 	go func() {
-		for {
-			_t2.Iterate()
+		for testRunning {
+			tox2.Iterate()
 			time.Sleep(300 * time.Millisecond)
 		}
 	}()
 
-	waitcond(func() bool { return _t1.IsConnected() > 0 }, 100)
-	waitcond(func() bool { return _t2.IsConnected() > 0 }, 100)
-	log.Println("both connected")
+	waitcond(func() bool { return tox1.IsConnected() > 0 }, 100)
+	waitcond(func() bool { return tox2.IsConnected() > 0 }, 100)
 
-	gid := _t1.AddAVGroupChat()
+	gid := tox1.AddAVGroupChat()
 	// ok, err := _t1.DelGroupChat(gid)
 	// log.Println(ok, err)
-	log.Println(gid)
+	t.Log(gid)
 
 	time.Sleep(5 * time.Second)
+
+	testRunning = false
 }

@@ -22,6 +22,7 @@ import "C"
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"unsafe"
@@ -174,15 +175,15 @@ func (this *Tox) ConferenceNew() (uint32, error) {
 	return uint32(r), nil
 }
 
-func (this *Tox) ConferenceDelete(groupNumber uint32) (int, error) {
+func (this *Tox) ConferenceDelete(groupNumber uint32) error {
 	this.lock()
 
-	var _gn = C.uint32_t(groupNumber)
+	var groupNumberC = C.uint32_t(groupNumber)
 	var cerr C.TOX_ERR_CONFERENCE_DELETE
-	r := C.tox_conference_delete(this.toxcore, _gn, &cerr)
-	if bool(r) == false {
+	C.tox_conference_delete(this.toxcore, groupNumberC, &cerr)
+	if err := ParseError(TOX_ERR_CONFERENCE_DELETE, ErrorCode(cerr)); err != nil {
 		this.unlock()
-		return 1, toxerrf("delete group chat failed:%d", cerr)
+		return err
 	}
 	this.unlock()
 
@@ -190,7 +191,7 @@ func (this *Tox) ConferenceDelete(groupNumber uint32) (int, error) {
 		this.hooks.ConferenceDelete(groupNumber)
 	}
 
-	return 0, nil
+	return nil
 }
 
 func (this *Tox) ConferencePeerGetName(groupNumber uint32, peerNumber uint32) (string, error) {
@@ -199,9 +200,9 @@ func (this *Tox) ConferencePeerGetName(groupNumber uint32, peerNumber uint32) (s
 	var _name [MAX_NAME_LENGTH]byte
 
 	var cerr C.TOX_ERR_CONFERENCE_PEER_QUERY
-	r := C.tox_conference_peer_get_name(this.toxcore, _gn, _pn, (*C.uint8_t)(&_name[0]), &cerr)
-	if r == false {
-		return "", toxerrf("get peer name failed: %d", cerr)
+	C.tox_conference_peer_get_name(this.toxcore, _gn, _pn, (*C.uint8_t)(&_name[0]), &cerr)
+	if err := ParseError(TOX_ERR_CONFERENCE_PEER_QUERY, ErrorCode(cerr)); err != nil {
+		return "", err
 	}
 
 	return C.GoString((*C.char)(safeptr(_name[:]))), nil
@@ -213,16 +214,16 @@ func (this *Tox) ConferencePeerGetPublicKey(groupNumber uint32, peerNumber uint3
 	var _pubkey [PUBLIC_KEY_SIZE]byte
 
 	var cerr C.TOX_ERR_CONFERENCE_PEER_QUERY
-	r := C.tox_conference_peer_get_public_key(this.toxcore, _gn, _pn, (*C.uint8_t)(&_pubkey[0]), &cerr)
-	if r == false {
-		return "", toxerrf("get pubkey failed: %d", cerr)
+	C.tox_conference_peer_get_public_key(this.toxcore, _gn, _pn, (*C.uint8_t)(&_pubkey[0]), &cerr)
+	if err := ParseError(TOX_ERR_CONFERENCE_PEER_QUERY, ErrorCode(cerr)); err != nil {
+		return "", err
 	}
 
 	pubkey := strings.ToUpper(hex.EncodeToString(_pubkey[:]))
 	return pubkey, nil
 }
 
-func (this *Tox) ConferenceInvite(friendNumber uint32, groupNumber uint32) (int, error) {
+func (this *Tox) ConferenceInvite(friendNumber uint32, groupNumber uint32) error {
 	this.lock()
 	defer this.unlock()
 
@@ -234,29 +235,31 @@ func (this *Tox) ConferenceInvite(friendNumber uint32, groupNumber uint32) (int,
 	// and the call will return true, but only strange thing accurs
 	// so just precheck the friendNumber and then go
 	if !this.FriendExists(friendNumber) {
-		return -1, toxerrf("friend not exists: %d", friendNumber)
+		return toxerrf("friend not exists: %d", friendNumber)
 	}
 
 	var cerr C.TOX_ERR_CONFERENCE_INVITE
-	r := C.tox_conference_invite(this.toxcore, _fn, _gn, &cerr)
-	if r == false {
-		return 0, toxerrf("conference invite failed: %d", cerr)
+	C.tox_conference_invite(this.toxcore, _fn, _gn, &cerr)
+	if err := ParseError(TOX_ERR_CONFERENCE_INVITE, ErrorCode(cerr)); err != nil {
+		return err
 	}
-	return 1, nil
+
+	return nil
 }
 
 func (this *Tox) ConferenceJoin(friendNumber uint32, cookie string) (uint32, error) {
 	if cookie == "" || len(cookie) < 20 {
-		return 0, errors.New("Invalid cookie:" + cookie)
+		return 0, fmt.Errorf("Invalid cookie: %s", cookie)
 	}
 
 	data, err := hex.DecodeString(cookie)
 	if err != nil {
-
+		return 0, fmt.Errorf("Invalid cookie: %s", cookie)
 	}
+
 	var datlen = len(data)
 	if data == nil || datlen < 10 {
-		return 0, errors.New("Invalid data: " + cookie)
+		return 0, fmt.Errorf("Invalid data: %s", cookie)
 	}
 
 	this.lock()
@@ -265,9 +268,9 @@ func (this *Tox) ConferenceJoin(friendNumber uint32, cookie string) (uint32, err
 
 	var cerr C.TOX_ERR_CONFERENCE_JOIN
 	r := C.tox_conference_join(this.toxcore, _fn, (*C.uint8_t)(&data[0]), _length, &cerr)
-	if r == C.UINT32_MAX {
-		defer this.unlock()
-		return uint32(r), toxerrf("join group chat failed: %d", cerr)
+	if err := ParseError(TOX_ERR_CONFERENCE_JOIN, ErrorCode(cerr)); err != nil {
+		this.unlock()
+		return 0, err
 	}
 	defer this.unlock()
 
@@ -278,7 +281,7 @@ func (this *Tox) ConferenceJoin(friendNumber uint32, cookie string) (uint32, err
 	return uint32(r), nil
 }
 
-func (this *Tox) ConferenceSendMessage(groupNumber uint32, mtype int, message string) (int, error) {
+func (this *Tox) ConferenceSendMessage(groupNumber uint32, mtype int, message string) error {
 	this.lock()
 	defer this.unlock()
 
@@ -290,18 +293,19 @@ func (this *Tox) ConferenceSendMessage(groupNumber uint32, mtype int, message st
 	case MESSAGE_TYPE_NORMAL:
 	case MESSAGE_TYPE_ACTION:
 	default:
-		return 0, toxerrf("Invalid message type: %d", mtype)
+		return toxerrf("Invalid message type: %d", mtype)
 	}
 
 	var cerr C.TOX_ERR_CONFERENCE_SEND_MESSAGE
-	r := C.tox_conference_send_message(this.toxcore, _gn, (C.TOX_MESSAGE_TYPE)(mtype), (*C.uint8_t)(&_message[0]), _length, &cerr)
-	if r == false {
-		return 0, toxerrf("group send message failed: %d", cerr)
+	C.tox_conference_send_message(this.toxcore, _gn, (C.TOX_MESSAGE_TYPE)(mtype), (*C.uint8_t)(&_message[0]), _length, &cerr)
+	if err := ParseError(TOX_ERR_CONFERENCE_SEND_MESSAGE, ErrorCode(cerr)); err != nil {
+		return err
 	}
-	return 1, nil
+
+	return nil
 }
 
-func (this *Tox) ConferenceSetTitle(groupNumber uint32, title string) (int, error) {
+func (this *Tox) ConferenceSetTitle(groupNumber uint32, title string) error {
 	this.lock()
 	defer this.unlock()
 
@@ -310,18 +314,15 @@ func (this *Tox) ConferenceSetTitle(groupNumber uint32, title string) (int, erro
 	var _length = C.size_t(len(title))
 
 	var cerr C.TOX_ERR_CONFERENCE_TITLE
-	r := C.tox_conference_set_title(this.toxcore, _gn, (*C.uint8_t)(&_title[0]), _length, &cerr)
-	if r == false {
-		if len(title) > MAX_NAME_LENGTH {
-			return 0, errors.New("title too long")
-		}
-		return 0, toxerrf("set title failed:%d", cerr)
+	C.tox_conference_set_title(this.toxcore, _gn, (*C.uint8_t)(&_title[0]), _length, &cerr)
+	if err := ParseError(TOX_ERR_CONFERENCE_SEND_MESSAGE, ErrorCode(cerr)); err != nil {
+		return err
 	}
 
 	if this.hooks.ConferenceSetTitle != nil {
 		this.hooks.ConferenceSetTitle(groupNumber, title)
 	}
-	return 1, nil
+	return nil
 }
 
 func (this *Tox) ConferenceGetTitle(groupNumber uint32) (string, error) {

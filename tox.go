@@ -612,7 +612,7 @@ func (this *Tox) Bootstrap(addr string, port uint16, pubkey string) (bool, error
 
 	var cerr C.TOX_ERR_BOOTSTRAP
 	r := C.tox_bootstrap(this.toxcore, (*C.char)(unsafe.Pointer(&_addr[0])), _port, _cpubkey, &cerr)
-	if err := ParseError(TOX_ERR_NEW, ErrorCode(cerr)); err != nil {
+	if err := ParseError(TOX_ERR_BOOTSTRAP, ErrorCode(cerr)); err != nil {
 		return false, err
 	}
 
@@ -1038,14 +1038,14 @@ func (this *Tox) Hash(data string, datalen uint32) (string, bool, error) {
 }
 
 // tox_callback_file_***
-func (this *Tox) FileControl(friendNumber uint32, fileNumber uint32, control int) (bool, error) {
+func (this *Tox) FileControl(friendNumber uint32, fileNumber uint32, control int) error {
 	var cerr C.TOX_ERR_FILE_CONTROL
-	r := C.tox_file_control(this.toxcore, C.uint32_t(friendNumber), C.uint32_t(fileNumber),
+	C.tox_file_control(this.toxcore, C.uint32_t(friendNumber), C.uint32_t(fileNumber),
 		C.TOX_FILE_CONTROL(control), &cerr)
 	if err := ParseError(TOX_ERR_FILE_CONTROL, ErrorCode(cerr)); err != nil {
-		return false, err
+		return err
 	}
-	return bool(r), nil
+	return nil
 }
 
 func (this *Tox) FileSend(friendNumber uint32, kind uint32, fileSize uint64, fileId string, fileName string) (uint32, error) {
@@ -1082,17 +1082,17 @@ func (this *Tox) FileSendChunk(friendNumber uint32, fileNumber uint32, position 
 	return bool(r), nil
 }
 
-func (this *Tox) FileSeek(friendNumber uint32, fileNumber uint32, position uint64) (bool, error) {
+func (this *Tox) FileSeek(friendNumber uint32, fileNumber uint32, position uint64) error {
 	this.lock()
 	defer this.unlock()
 
 	var cerr C.TOX_ERR_FILE_SEEK
-	r := C.tox_file_seek(this.toxcore, C.uint32_t(friendNumber), C.uint32_t(fileNumber),
+	C.tox_file_seek(this.toxcore, C.uint32_t(friendNumber), C.uint32_t(fileNumber),
 		C.uint64_t(position), &cerr)
 	if err := ParseError(TOX_ERR_FILE_SEEK, ErrorCode(cerr)); err != nil {
-		return false, err
+		return err
 	}
-	return bool(r), nil
+	return nil
 }
 
 func (this *Tox) FileGetFileId(friendNumber uint32, fileNumber uint32) (string, error) {
