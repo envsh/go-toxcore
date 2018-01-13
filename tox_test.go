@@ -317,28 +317,25 @@ func (this *MiniTox) stop() {
 
 var err error
 
-func waitcond(cond func() bool, timeout int) {
-	// TODO might infinite loop
-	btime := time.Now()
-	cnter := 0
-	for {
-		if cond() {
-			// print("\n")
-			return
-		}
+// returns true on success, false on timeout
+func waitcond(cond func() bool, timeoutSec int) bool {
+	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
 
-		etime := time.Now()
-		dtime := etime.Sub(btime)
-		if timeout > 0 && int(dtime.Seconds()) > timeout {
-			return // timeout
-		}
+	var condResult bool
+	var timedOut bool
 
-		if cnter%15 == 0 {
-			// print(".")
-		}
-		cnter += 1
-		time.Sleep(51 * time.Millisecond)
+	for !condResult && !timedOut {
+		condResult = cond()
+		timedOut = time.Now().After(deadline)
+
+		time.Sleep(time.Second)
 	}
+
+	if timedOut {
+		return false
+	}
+
+	return true
 }
 
 // login udp / login tcp
@@ -720,24 +717,24 @@ func TestGroup(t *testing.T) {
 	})
 
 	t.Run("group invite", func(t *testing.T) {
-		t1 := NewMiniTox()
-		t2 := NewMiniTox()
-		defer t1.t.Kill()
-		defer t2.t.Kill()
+		tox1 := NewMiniTox()
+		tox2 := NewMiniTox()
+		defer tox1.t.Kill()
+		defer tox2.t.Kill()
 
-		t1.t.CallbackFriendRequest(func(_ *Tox, friendId, msg string, d interface{}) {
-			t1.t.FriendAddNorequest(friendId)
+		tox1.t.CallbackFriendRequest(func(_ *Tox, friendId, msg string, d interface{}) {
+			tox1.t.FriendAddNorequest(friendId)
 		}, nil)
 
-		t1.t.CallbackGroupInvite(func(_ *Tox, friendNumber uint32, itype uint8, data string, ud interface{}) {
+		tox1.t.CallbackGroupInvite(func(_ *Tox, friendNumber uint32, itype uint8, data string, ud interface{}) {
 			switch itype {
 			case GROUPCHAT_TYPE_TEXT:
-				_, err := t1.t.JoinGroupChat(friendNumber, data)
+				_, err := tox1.t.JoinGroupChat(friendNumber, data)
 				if err != nil {
 					t.Error(err)
 				}
 			case GROUPCHAT_TYPE_AV:
-				_, err := t1.t.JoinAVGroupChat(friendNumber, data)
+				_, err := tox1.t.JoinAVGroupChat(friendNumber, data)
 				if err != nil {
 					t.Error(err)
 				}
@@ -745,36 +742,36 @@ func TestGroup(t *testing.T) {
 		}, nil)
 
 		groupNameChangeTimes := 0
-		t2.t.CallbackGroupNameListChange(func(_ *Tox, groupNumber int, peerNumber int, change uint8, ud interface{}) {
+		tox2.t.CallbackGroupNameListChange(func(_ *Tox, groupNumber int, peerNumber int, change uint8, ud interface{}) {
 			groupNameChangeTimes++
 		}, nil)
 
-		go t1.Iterate()
-		go t2.Iterate()
-		defer t1.stop()
-		defer t2.stop()
+		go tox1.Iterate()
+		go tox2.Iterate()
+		defer tox1.stop()
+		defer tox2.stop()
 
 		waitcond(func() bool {
-			return t1.t.SelfGetConnectionStatus() == 2 && t2.t.SelfGetConnectionStatus() == 2
+			return tox1.t.SelfGetConnectionStatus() == 2 && tox2.t.SelfGetConnectionStatus() == 2
 		}, 100)
 
-		t2.t.FriendAdd(t1.t.SelfGetAddress(), "autotests")
+		tox2.t.FriendAdd(tox1.t.SelfGetAddress(), "autotests")
 		waitcond(func() bool {
-			return t1.t.SelfGetFriendListSize() == 1
+			return tox1.t.SelfGetFriendListSize() == 1
 		}, 100)
 
-		fn, err := t2.t.FriendByPublicKey(t1.t.SelfGetPublicKey())
+		fn, err := tox2.t.FriendByPublicKey(tox1.t.SelfGetPublicKey())
 		if err != nil {
 			t.Error(err)
 		}
-		gn, err := t2.t.AddGroupChat()
+		gn, err := tox2.t.AddGroupChat()
 		if err != nil {
 			t.Error(err)
 		}
 
 		// must wait friend online and can call InviteFriend
 		waitcond(func() bool {
-			st, err := t2.t.FriendGetConnectionStatus(fn)
+			st, err := tox2.t.FriendGetConnectionStatus(fn)
 			if err != nil {
 				t.Error(err)
 			}
@@ -782,24 +779,24 @@ func TestGroup(t *testing.T) {
 			return st > CONNECTION_NONE
 		}, 100)
 
-		err = t2.t.InviteFriend(fn, gn)
+		err = tox2.t.InviteFriend(fn, gn)
 		if err != nil {
 			t.Error(err)
 		}
 		waitcond(func() bool {
-			return t1.t.CountChatList() == 1
+			return tox1.t.CountChatList() == 1
 		}, 100)
-		if t1.t.CountChatList() != 1 {
-			t.Error("must 1 chat", t1.t.CountChatList())
+		if tox1.t.CountChatList() != 1 {
+			t.Error("must 1 chat", tox1.t.CountChatList())
 		}
-		if t2.t.CountChatList() != 1 {
-			t.Error("must 1 chat", t2.t.CountChatList())
+		if tox2.t.CountChatList() != 1 {
+			t.Error("must 1 chat", tox2.t.CountChatList())
 		}
 
-		if err := t1.t.DelGroupChat(gn); err != nil {
+		if err := tox1.t.DelGroupChat(gn); err != nil {
 			t.Error(err)
 		}
-		if err := t2.t.DelGroupChat(gn); err != nil {
+		if err := tox2.t.DelGroupChat(gn); err != nil {
 			t.Error(err)
 		}
 
@@ -830,6 +827,10 @@ func TestGroup(t *testing.T) {
 		recved_act := ""
 		recved_msg := ""
 		t1.t.CallbackGroupMessage(func(_ *Tox, groupNumber, peerNumber int, msg string, ud interface{}) {
+			recved_msg = msg
+		}, nil)
+		t1.t.CallbackGroupAction(func(_ *Tox, groupNumber, peerNumber int, msg string, ud interface{}) {
+			recved_act = msg
 		}, nil)
 
 		go t1.Iterate()
@@ -837,14 +838,21 @@ func TestGroup(t *testing.T) {
 		defer t1.stop()
 		defer t2.stop()
 
-		waitcond(func() bool {
+		var ok bool
+		ok = waitcond(func() bool {
 			return t1.t.SelfGetConnectionStatus() == 2 && t2.t.SelfGetConnectionStatus() == 2
 		}, 100)
+		if !ok {
+			t.Error("timeout while waiting for tox start")
+		}
 
 		t2.t.FriendAdd(t1.t.SelfGetAddress(), "autotests")
-		waitcond(func() bool {
+		ok = waitcond(func() bool {
 			return t1.t.SelfGetFriendListSize() == 1
 		}, 100)
+		if !ok {
+			t.Error("timeout while waiting for tox1 add friend")
+		}
 
 		fn, err := t2.t.FriendByPublicKey(t1.t.SelfGetPublicKey())
 		if err != nil {
@@ -856,23 +864,32 @@ func TestGroup(t *testing.T) {
 		}
 
 		// must wait friend online and can call InviteFriend
-		waitcond(func() bool {
+		ok = waitcond(func() bool {
 			st, _ := t2.t.FriendGetConnectionStatus(fn)
 			return st > CONNECTION_NONE
 		}, 100)
+		if !ok {
+			t.Error("timeout while waiting for tox2 online")
+		}
 
 		err = t2.t.InviteFriend(fn, gn)
 		if err != nil {
 			t.Error(err)
 		}
-		waitcond(func() bool {
+		ok = waitcond(func() bool {
 			return t1.t.CountChatList() == 1
 		}, 100)
+		if !ok {
+			t.Error("timeout while waiting for invite friend")
+		}
 
 		// must wait peer join
-		waitcond(func() bool {
+		ok = waitcond(func() bool {
 			return t2.t.GroupNumberPeers(gn) == 2
-		}, 10)
+		}, 30)
+		if !ok {
+			t.Error("timeout while waiting for 2 peers online")
+		}
 
 		if err := t2.t.GroupMessageSend(gn, "foo123"); err != nil {
 			t.Error(err)
@@ -880,9 +897,9 @@ func TestGroup(t *testing.T) {
 		if err := t2.t.GroupActionSend(gn, "bar123"); err != nil {
 			t.Error(err)
 		}
-		waitcond(func() bool {
+		ok = waitcond(func() bool {
 			return len(recved_msg) > 0 && len(recved_act) > 0
-		}, 10)
+		}, 30)
 		if recved_msg != "foo123" || recved_act != "bar123" {
 			t.Errorf(`expected "%s" and "%s", got "%s" and "%s"`, "foo123", "bar123", recved_msg, recved_act)
 		}
