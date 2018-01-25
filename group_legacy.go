@@ -76,7 +76,7 @@ func (this *Tox) AddGroupChat() (int, error) {
 	return int(gn), err
 }
 
-func (this *Tox) DelGroupChat(groupNumber int) (int, error) {
+func (this *Tox) DelGroupChat(groupNumber int) error {
 	return this.ConferenceDelete(uint32(groupNumber))
 }
 
@@ -88,7 +88,7 @@ func (this *Tox) GroupPeerPubkey(groupNumber int, peerNumber int) (string, error
 	return this.ConferencePeerGetPublicKey(uint32(groupNumber), uint32(peerNumber))
 }
 
-func (this *Tox) InviteFriend(friendNumber uint32, groupNumber int) (int, error) {
+func (this *Tox) InviteFriend(friendNumber uint32, groupNumber int) error {
 	return this.ConferenceInvite(friendNumber, uint32(groupNumber))
 }
 
@@ -97,15 +97,15 @@ func (this *Tox) JoinGroupChat(friendNumber uint32, cookie string) (int, error) 
 	return int(groupNumber), err
 }
 
-func (this *Tox) GroupActionSend(groupNumber int, action string) (int, error) {
+func (this *Tox) GroupActionSend(groupNumber int, action string) error {
 	return this.ConferenceSendMessage(uint32(groupNumber), MESSAGE_TYPE_ACTION, action)
 }
 
-func (this *Tox) GroupMessageSend(groupNumber int, message string) (int, error) {
+func (this *Tox) GroupMessageSend(groupNumber int, message string) error {
 	return this.ConferenceSendMessage(uint32(groupNumber), MESSAGE_TYPE_NORMAL, message)
 }
 
-func (this *Tox) GroupSetTitle(groupNumber int, title string) (int, error) {
+func (this *Tox) GroupSetTitle(groupNumber int, title string) error {
 	return this.ConferenceSetTitle(uint32(groupNumber), title)
 }
 
