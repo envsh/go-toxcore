@@ -26,6 +26,10 @@ features:
 [ ] auto join groupbot's group chat
 [x] auto keep groupchat title
 [ ] auto detect and show peer join/leave event
+[ ] auto leave when specified peer leave(shadow of who)
+[ ] auto reply command: id/status/info/forward
+[ ] sequenced send/recv message
+[ ] sync send/recv message statemachine
 */
 
 const (
@@ -94,14 +98,22 @@ func SetAutoBotFeatures(t *tox.Tox, f int) {
 
 	t.CallbackConferenceNameListChangeAdd(func(this *tox.Tox, groupNumber uint32, peerNumber uint32, change uint8, userData interface{}) {
 		ok := checkOnlyMeLeftGroupClean(t, int(groupNumber), int(peerNumber), change)
-		if ok && matchFeat(this, FOTA_REMOVE_ONLY_ME_ALL) {
-			// real delete it
-			_, err := t.ConferenceDelete(groupNumber)
-			gopp.ErrPrint(err)
-		} else if ok && matchFeat(this, FOTA_REMOVE_ONLY_ME_INVITED) {
-			if IsInvitedGroup(this, groupNumber) {
+		if ok {
+			fsize := t.ConferenceGetChatlistSize()
+			ftitle, _ := ConferenceGetTitle(t, groupNumber)
+			if ok && matchFeat(this, FOTA_REMOVE_ONLY_ME_ALL) {
 				// real delete it
-				removedInvitedGroupClean(this, int(groupNumber))
+				_, err := t.ConferenceDelete(groupNumber)
+				gopp.ErrPrint(err)
+				tsize := t.ConferenceGetChatlistSize()
+				log.Println("deleted only me group:", groupNumber, ftitle, fsize, "=>", tsize)
+			} else if ok && matchFeat(this, FOTA_REMOVE_ONLY_ME_INVITED) {
+				if IsInvitedGroup(this, groupNumber) {
+					// real delete it
+					removedInvitedGroupClean(this, int(groupNumber))
+					tsize := t.ConferenceGetChatlistSize()
+					log.Println("deleted only me invited:", groupNumber, ftitle, fsize, "=>", tsize)
+				}
 			}
 		}
 	}, nil)

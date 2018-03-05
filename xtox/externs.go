@@ -241,6 +241,14 @@ func CheckPubkey(s string) bool {
 	return true
 }
 
+// support long text
+// possible error, send half, error send half
+// split by char, or split by line
+// if split by line, if the line is too long, still use split by char for the line
+func FriendSendMessage(t *tox.Tox, friendNumber uint32, mtype int, msg string) {
+
+}
+
 // should block
 func Run(t *tox.Tox) {
 	tmer := time.NewTicker(200 * time.Millisecond)
