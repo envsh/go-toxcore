@@ -103,7 +103,7 @@ func SetAutoBotFeatures(t *tox.Tox, f int) {
 			ftitle, _ := ConferenceGetTitle(t, groupNumber)
 			if ok && matchFeat(this, FOTA_REMOVE_ONLY_ME_ALL) {
 				// real delete it
-				_, err := t.ConferenceDelete(groupNumber)
+				err := t.ConferenceDelete(groupNumber)
 				gopp.ErrPrint(err)
 				tsize := t.ConferenceGetChatlistSize()
 				log.Println("deleted only me group:", groupNumber, ftitle, fsize, "=>", tsize)
@@ -229,7 +229,7 @@ func removedInvitedGroup(t *tox.Tox, groupNumber int) error {
 		log.Println("Delete invited group: ", groupNumber, groupTitle)
 		delete(toxaa.theirGroups, groupNumber)
 		toxaa.initGroupNames.Delete(uint32(groupNumber))
-		_, err = t.ConferenceDelete(uint32(groupNumber))
+		err = t.ConferenceDelete(uint32(groupNumber))
 		gopp.ErrPrint(err)
 
 		// try rejoin
@@ -248,7 +248,7 @@ func removedInvitedGroupClean(t *tox.Tox, groupNumber int) error {
 		log.Println("Delete invited group: ", groupNumber, groupTitle)
 		delete(toxaa.theirGroups, groupNumber)
 		toxaa.initGroupNames.Delete(uint32(groupNumber))
-		_, err = t.ConferenceDelete(uint32(groupNumber))
+		err = t.ConferenceDelete(uint32(groupNumber))
 		gopp.ErrPrint(err)
 	} else {
 		log.Println("Self created group: don't delete:", groupNumber, groupTitle)

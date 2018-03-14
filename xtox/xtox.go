@@ -102,7 +102,7 @@ func tryNew(ctx *ToxContext) (*tox.Tox, *tox.ToxOptions) {
 
 	for port := 33445 + 5; port < 65536; port++ {
 		opts.Tcp_port = uint16(port)
-		t := tox.NewTox(&opts)
+		t, _ := tox.NewTox(&opts)
 		if t != nil {
 			log.Println(opts.Tcp_port)
 			return t, &opts
