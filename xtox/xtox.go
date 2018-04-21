@@ -25,9 +25,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	tox "github.com/kitech/go-toxcore"
+	// tox "github.com/kitech/go-toxcore"
+	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/kitech/godsts/maps/hashbidimap"
 	"github.com/kitech/godsts/maps/hashmap"
+	funk "github.com/thoas/go-funk"
+)
+
+const (
+	CHAT_CHANGE_PEER_ADD  = uint8(0)
+	CHAT_CHANGE_PEER_DEL  = uint8(1)
+	CHAT_CHANGE_PEER_NAME = uint8(2)
 )
 
 type ToxContext struct {
@@ -82,6 +90,7 @@ type _XTox struct {
 	groupPeerKeys    *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => pubkey
 	groupPeerNames   *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => name
 	groupTitles      *hashmap.Map // uint32 => string, group number => group title
+	groupPeers       *hashmap.Map // TODO uint32 => Map[uint32]*PeerInfo
 	needReconn       int32
 }
 
@@ -102,7 +111,7 @@ func tryNew(ctx *ToxContext) (*tox.Tox, *tox.ToxOptions) {
 
 	for port := 33445 + 5; port < 65536; port++ {
 		opts.Tcp_port = uint16(port)
-		t, _ := tox.NewTox(&opts)
+		t := tox.NewTox(&opts)
 		if t != nil {
 			log.Println(opts.Tcp_port)
 			return t, &opts
@@ -160,38 +169,75 @@ func (this *_XTox) initCallbacks() {
 		// log.Println(friendNumber, friendName, status, tox.ConnStatusString(status))
 		t.WriteSavedata(this.ctx.SaveFile)
 	}, nil)
-	t.CallbackConferenceNameListChangeAdd(func(_ *tox.Tox, groupNumber uint32, peerNumber uint32, change uint8, userData interface{}) {
-		switch change {
-		case tox.CHAT_CHANGE_PEER_ADD:
-			fallthrough
-		case tox.CHAT_CHANGE_PEER_NAME:
-			pubkey, err := t.ConferencePeerGetPublicKey(groupNumber, peerNumber)
-			if err == nil {
-				// assert found == true
-				peerKeysx, found := this.groupPeerKeys.Get(groupNumber)
-				if !found {
-					peerKeysx = hashmap.New()
-					this.groupPeerKeys.Put(groupNumber, peerKeysx)
-				}
+	t.CallbackConferencePeerNameAdd(func(_ *tox.Tox, groupNumber uint32, peerNumber uint32, peerName string, userData interface{}) {
+		peerNamesx, found := this.groupPeerNames.Get(groupNumber)
+		if !found {
+			peerNamesx = hashmap.New()
+			this.groupPeerNames.Put(groupNumber, peerNamesx)
+		}
 
-				peerKeysx.(*hashmap.Map).Put(peerNumber, pubkey)
-			} else {
-				log.Println(err, groupNumber, peerNumber)
-			}
-			peerName, err := t.ConferencePeerGetName(groupNumber, peerNumber)
-			if err == nil {
-				peerNamesx, found := this.groupPeerNames.Get(groupNumber)
-				if !found {
-					peerNamesx = hashmap.New()
-					this.groupPeerNames.Put(groupNumber, peerNamesx)
-				}
-
-				peerNamesx.(*hashmap.Map).Put(groupNumber, peerName)
-			} else {
-				log.Println(err, groupNumber, peerNumber)
+		peerNamesx.(*hashmap.Map).Put(peerNumber, peerName)
+	}, nil)
+	t.CallbackConferencePeerListChangedAdd(func(_ *tox.Tox, groupNumber uint32, userData interface{}) {
+		pubkeys := t.ConferenceGetPeerPubkeys(groupNumber)
+		peerKeysx, found := this.groupPeerKeys.Get(groupNumber)
+		if !found {
+			peerKeysx = hashmap.New()
+			this.groupPeerKeys.Put(groupNumber, peerKeysx)
+		}
+		var addedKeys []string
+		var deletedKeys []string
+		peerKeys := peerKeysx.(*hashmap.Map)
+		for _, pubkey := range pubkeys {
+			if !funk.Contains(peerKeys.Values(), pubkey) {
+				addedKeys = append(addedKeys, pubkey)
 			}
 		}
+		for _, pubkeyx := range peerKeys.Values() {
+			if !funk.Contains(pubkeys, pubkeyx) {
+				deletedKeys = append(deletedKeys, pubkeyx.(string))
+			}
+		}
+		log.Println("added:", len(addedKeys), "deleted:", len(deletedKeys), "gn:", groupNumber)
+		peerKeys.Clear()
+		for num, pubkey := range pubkeys {
+			peerKeys.Put(uint32(num), pubkey)
+		}
 	}, nil)
+	/*
+		t.CallbackConferenceNameListChangeAdd(func(_ *tox.Tox, groupNumber uint32, peerNumber uint32, change uint8, userData interface{}) {
+			switch change {
+			case tox.CHAT_CHANGE_PEER_ADD:
+				fallthrough
+			case tox.CHAT_CHANGE_PEER_NAME:
+				pubkey, err := t.ConferencePeerGetPublicKey(groupNumber, peerNumber)
+				if err == nil {
+					// assert found == true
+					peerKeysx, found := this.groupPeerKeys.Get(groupNumber)
+					if !found {
+						peerKeysx = hashmap.New()
+						this.groupPeerKeys.Put(groupNumber, peerKeysx)
+					}
+
+					peerKeysx.(*hashmap.Map).Put(peerNumber, pubkey)
+				} else {
+					log.Println(err, groupNumber, peerNumber)
+				}
+				peerName, err := t.ConferencePeerGetName(groupNumber, peerNumber)
+				if err == nil {
+					peerNamesx, found := this.groupPeerNames.Get(groupNumber)
+					if !found {
+						peerNamesx = hashmap.New()
+						this.groupPeerNames.Put(groupNumber, peerNamesx)
+					}
+
+					peerNamesx.(*hashmap.Map).Put(groupNumber, peerName)
+				} else {
+					log.Println(err, groupNumber, peerNumber)
+				}
+			}
+		}, nil)
+	*/
 	t.CallbackConferenceTitleAdd(func(_ *tox.Tox, groupNumber uint32, peerNumber uint32, title string, userData interface{}) {
 		this.groupTitles.Put(groupNumber, title)
 		// log.Println("set group title:", groupNumber, title)
@@ -263,4 +309,17 @@ func (this *_XTox) initHooks() {
 		this.groupTitles.Put(groupNumber, title)
 		// log.Println("set group title:", groupNumber, title)
 	})
+}
+
+type PeerInfo struct {
+	Number uint32
+	Pubkey string
+	Name   string
+}
+
+type FriendInfo struct {
+	PeerInfo
+	StatusMessage string
+	Status        uint32
+	LastSeen      uint32
 }

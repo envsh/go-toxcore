@@ -9,8 +9,10 @@ import (
 	"sync"
 	"time"
 
-	tox "github.com/kitech/go-toxcore"
+	// tox "github.com/kitech/go-toxcore"
+	tox "github.com/TokTok/go-toxcore-c"
 	// "github.com/kitech/go-toxcore/xtox"
+	"github.com/kitech/godsts/maps/hashmap"
 	"github.com/kitech/godsts/sets/hashset"
 	textdistance "github.com/masatana/go-textdistance"
 	"github.com/xrash/smetrics"
@@ -33,17 +35,18 @@ features:
 */
 
 const (
-	FOTA_NONE                   = 0 << 0
-	FOTA_ALL                    = int(math.MaxInt64)
-	FOTA_ADD_NET_HELP_BOTS      = 1 << 0
-	FOTA_ACCEPT_GROUP_INVITE    = 1 << 1
-	FOTA_ACCEPT_FRIEND_REQUEST  = 1 << 2
-	FOTA_REMOVE_ONLY_ME_INVITED = 1 << 3
-	FOTA_REMOVE_ONLY_ME_ALL     = 1 << 4
-	FOTA_JOIN_GROUPBOT_ROOMS    = 1 << 5
-	FOTA_CHECK_FRIEND_DELETE_ME = 1 << 6
-	FOTA_KEEP_GROUPCHAT_TITLE   = 1 << 7
-	FOTA_SHOW_PEER_JOIN_LEAVE   = 1 << 8
+	FOTA_NONE                          = 0 << 0
+	FOTA_ALL                           = int(math.MaxInt64)
+	FOTA_ADD_NET_HELP_BOTS             = 1 << 0
+	FOTA_ACCEPT_GROUP_INVITE           = 1 << 1
+	FOTA_ACCEPT_FRIEND_REQUEST         = 1 << 2
+	FOTA_REMOVE_ONLY_ME_INVITED        = 1 << 3
+	FOTA_REMOVE_ONLY_ME_ALL            = 1 << 4
+	FOTA_JOIN_GROUPBOT_ROOMS           = 1 << 5
+	FOTA_CHECK_FRIEND_DELETE_ME        = 1 << 6
+	FOTA_KEEP_GROUPCHAT_TITLE          = 1 << 7
+	FOTA_SHOW_PEER_JOIN_LEAVE          = 1 << 8
+	FOTA_REMOVE_LONGTIME_NOSEE_FRIENDS = 1 << 9
 )
 
 type toxabContext struct {
@@ -75,7 +78,7 @@ func SetAutoBotFeatures(t *tox.Tox, f int) {
 		if matchFeat(this, FOTA_ACCEPT_GROUP_INVITE) {
 			var err error
 			var groupNumber uint32
-			switch int(itype) {
+			switch itype {
 			case tox.CONFERENCE_TYPE_TEXT:
 				groupNumber, err = t.ConferenceJoin(friendNumber, cookie)
 			case tox.CONFERENCE_TYPE_AV:
@@ -96,14 +99,28 @@ func SetAutoBotFeatures(t *tox.Tox, f int) {
 		}
 	}, nil)
 
-	t.CallbackConferenceNameListChangeAdd(func(this *tox.Tox, groupNumber uint32, peerNumber uint32, change uint8, userData interface{}) {
-		ok := checkOnlyMeLeftGroupClean(t, int(groupNumber), int(peerNumber), change)
+	t.CallbackConferencePeerNameAdd(func(_ *tox.Tox, groupNumber uint32, peerNumber uint32, name string, userData interface{}) {
+
+	}, nil)
+	t.CallbackConferencePeerListChangedAdd(func(this *tox.Tox, groupNumber uint32, userData interface{}) {
+		pubkeys := t.ConferenceGetPeerPubkeys(groupNumber)
+		xt := ctxs[t]
+		peerKeysx, _ := xt.groupPeerKeys.Get(groupNumber)
+		var change uint8
+		if peerKeysx == nil || len(pubkeys) > peerKeysx.(*hashmap.Map).Size() {
+			change = CHAT_CHANGE_PEER_ADD
+		} else {
+			change = CHAT_CHANGE_PEER_DEL
+		}
+
+		//
+		ok := checkOnlyMeLeftGroupClean(t, int(groupNumber), 0, change)
 		if ok {
 			fsize := t.ConferenceGetChatlistSize()
 			ftitle, _ := ConferenceGetTitle(t, groupNumber)
 			if ok && matchFeat(this, FOTA_REMOVE_ONLY_ME_ALL) {
 				// real delete it
-				err := t.ConferenceDelete(groupNumber)
+				_, err := t.ConferenceDelete(groupNumber)
 				gopp.ErrPrint(err)
 				tsize := t.ConferenceGetChatlistSize()
 				log.Println("deleted only me group:", groupNumber, ftitle, fsize, "=>", tsize)
@@ -116,7 +133,31 @@ func SetAutoBotFeatures(t *tox.Tox, f int) {
 				}
 			}
 		}
+
 	}, nil)
+	/*
+		t.CallbackConferenceNameListChangeAdd(func(this *tox.Tox, groupNumber uint32, peerNumber uint32, change uint8, userData interface{}) {
+			ok := checkOnlyMeLeftGroupClean(t, int(groupNumber), int(peerNumber), change)
+			if ok {
+				fsize := t.ConferenceGetChatlistSize()
+				ftitle, _ := ConferenceGetTitle(t, groupNumber)
+				if ok && matchFeat(this, FOTA_REMOVE_ONLY_ME_ALL) {
+					// real delete it
+					_, err := t.ConferenceDelete(groupNumber)
+					gopp.ErrPrint(err)
+					tsize := t.ConferenceGetChatlistSize()
+					log.Println("deleted only me group:", groupNumber, ftitle, fsize, "=>", tsize)
+				} else if ok && matchFeat(this, FOTA_REMOVE_ONLY_ME_INVITED) {
+					if IsInvitedGroup(this, groupNumber) {
+						// real delete it
+						removedInvitedGroupClean(this, int(groupNumber))
+						tsize := t.ConferenceGetChatlistSize()
+						log.Println("deleted only me invited:", groupNumber, ftitle, fsize, "=>", tsize)
+					}
+				}
+			}
+		}, nil)
+	*/
 }
 
 // feat匹配测试函数
@@ -229,7 +270,7 @@ func removedInvitedGroup(t *tox.Tox, groupNumber int) error {
 		log.Println("Delete invited group: ", groupNumber, groupTitle)
 		delete(toxaa.theirGroups, groupNumber)
 		toxaa.initGroupNames.Delete(uint32(groupNumber))
-		err = t.ConferenceDelete(uint32(groupNumber))
+		_, err = t.ConferenceDelete(uint32(groupNumber))
 		gopp.ErrPrint(err)
 
 		// try rejoin
@@ -248,7 +289,7 @@ func removedInvitedGroupClean(t *tox.Tox, groupNumber int) error {
 		log.Println("Delete invited group: ", groupNumber, groupTitle)
 		delete(toxaa.theirGroups, groupNumber)
 		toxaa.initGroupNames.Delete(uint32(groupNumber))
-		err = t.ConferenceDelete(uint32(groupNumber))
+		_, err = t.ConferenceDelete(uint32(groupNumber))
 		gopp.ErrPrint(err)
 	} else {
 		log.Println("Self created group: don't delete:", groupNumber, groupTitle)
@@ -272,7 +313,7 @@ func checkOnlyMeLeftGroup(t *tox.Tox, groupNumber int, peerNumber int, change ui
 	}
 	peerName, err := t.GroupPeerName(groupNumber, peerNumber)
 	if err != nil {
-		if change != tox.CHAT_CHANGE_PEER_DEL {
+		if change != CHAT_CHANGE_PEER_DEL {
 			log.Println("wtf", err, peerName)
 		}
 	}
@@ -287,9 +328,9 @@ func checkOnlyMeLeftGroup(t *tox.Tox, groupNumber int, peerNumber int, change ui
 		grptype, err := t.GroupGetType(uint32(groupNumber))
 		log.Println("before delete group chat", groupNumber, grptype, err)
 		switch uint8(grptype) {
-		case tox.GROUPCHAT_TYPE_AV:
+		case tox.CONFERENCE_TYPE_AV:
 			// log.Println("dont delete av groupchat for a try", groupNumber, ok, err)
-		case tox.GROUPCHAT_TYPE_TEXT:
+		case tox.CONFERENCE_TYPE_TEXT:
 			// ok, err := this._tox.DelGroupChat(groupNumber)
 			// log.Println("after delete group chat", groupNumber, ok, err)
 		default:
@@ -306,21 +347,23 @@ func checkOnlyMeLeftGroup(t *tox.Tox, groupNumber int, peerNumber int, change ui
 }
 
 // 干净版本的check，只做check，不做删除
-func checkOnlyMeLeftGroupClean(t *tox.Tox, groupNumber int, peerNumber int, change uint8) bool {
-	if change != tox.CHAT_CHANGE_PEER_DEL {
+func checkOnlyMeLeftGroupClean(t *tox.Tox, groupNumber int, _ /*peerNumber*/ int, change uint8) bool {
+	if change != CHAT_CHANGE_PEER_DEL {
 		return false
 	}
 
 	groupTitle, err := t.GroupGetTitle(groupNumber)
 	if err != nil {
-		log.Println("wtf", err, groupNumber, peerNumber, change)
+		log.Println("wtf", err, groupNumber, change)
 	}
-	peerName, err := t.GroupPeerName(groupNumber, peerNumber)
-	if err != nil {
-		if change != tox.CHAT_CHANGE_PEER_DEL {
-			log.Println("wtf", err, peerName)
+	/*
+		peerName, err := t.GroupPeerName(groupNumber, peerNumber)
+		if err != nil {
+			if change != CHAT_CHANGE_PEER_DEL {
+				log.Println("wtf", err, peerName)
+			}
 		}
-	}
+	*/
 	// var peerPubkey string
 
 	// check only me left case
