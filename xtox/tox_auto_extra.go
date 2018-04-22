@@ -50,15 +50,27 @@ const (
 )
 
 type toxabContext struct {
-	feats int
-	inst  *tox.Tox
+	feats            int
+	inst             *tox.Tox
+	invitings        sync.Map // friend pubkey @ room name => true
+	groupPeerPubkeys sync.Map // int => []string, groupNumber => pubkey
+}
+
+func newToxabContext(feats int, inst *tox.Tox) *toxabContext {
+	this := &toxabContext{feats: feats, inst: inst}
+	this.invitings = sync.Map{}
+	this.groupPeerPubkeys = sync.Map{}
+	return this
 }
 
 var toxabCtxs = sync.Map{} // *tox.Tox => *toxabContext
 
 func SetAutoBotFeatures(t *tox.Tox, f int) {
-	if _, loaded := toxabCtxs.LoadOrStore(t, &toxabContext{f, t}); loaded {
+	if _, loaded := toxabCtxs.LoadOrStore(t, newToxabContext(f, t)); loaded {
 		return // already exists
+	}
+	if matchFeat(t, FOTA_REMOVE_LONGTIME_NOSEE_FRIENDS) {
+		// removeLongtimeNoSeeHelperBots(t)
 	}
 
 	t.CallbackSelfConnectionStatusAdd(func(this *tox.Tox, status int, userData interface{}) {
@@ -173,6 +185,7 @@ func matchFeat(this *tox.Tox, f int) bool {
 
 ////////////////////////////////
 var groupbot = "56A1ADE4B65B86BCD51CC73E2CD4E542179F47959FE3E0E21B4B0ACDADE51855D34D34D37CB5"
+var lainbot = "415732B8A549B2A1F9A278B91C649B9E30F07330E8818246375D19E52F927C57F08A44E082F6"
 
 // 帮助改进p2p网络稳定的bot列表
 var nethlpbots = []string{
@@ -248,6 +261,21 @@ func autoAddNetHelperBots(t *tox.Tox, status int, d interface{}) {
 		}
 	}
 }
+func removeLongtimeNoSeeHelperBots(t *tox.Tox) {
+	for _, bot := range nethlpbots {
+		friendNumber, err := t.FriendByPublicKey(bot)
+		if err == nil {
+			if bot == groupbot {
+				lastTime, _ := t.FriendGetLastOnline(friendNumber)
+				if uint64(time.Now().Unix())-lastTime > 30*24*3600 {
+					log.Println("long time no see, groupbot, remove it")
+					t.FriendDelete(friendNumber)
+					return
+				}
+			}
+		}
+	}
+}
 
 /*
 实现自动摘除被别人邀请，但当前只有自己在了的群组。
@@ -300,22 +328,16 @@ func removedInvitedGroupClean(t *tox.Tox, groupNumber int) error {
 
 // 检查群组中是否只有自己了，来自 callback name list change
 // 但是只需要关注 PEER_DEL事件
-func checkOnlyMeLeftGroup(t *tox.Tox, groupNumber int, peerNumber int, change uint8) {
+func checkOnlyMeLeftGroup(t *tox.Tox, groupNumber int, _ /*peerNumber*/ int, change uint8) {
 	this := toxaa
 
-	if !checkOnlyMeLeftGroupClean(t, groupNumber, peerNumber, change) {
+	if !checkOnlyMeLeftGroupClean(t, groupNumber, 0, change) {
 		return
 	}
 
 	groupTitle, err := t.GroupGetTitle(groupNumber)
 	if err != nil {
-		log.Println("wtf", err, groupNumber, peerNumber, change)
-	}
-	peerName, err := t.GroupPeerName(groupNumber, peerNumber)
-	if err != nil {
-		if change != CHAT_CHANGE_PEER_DEL {
-			log.Println("wtf", err, peerName)
-		}
+		log.Println("wtf", err, groupNumber, change)
 	}
 	// var peerPubkey string
 
@@ -375,6 +397,11 @@ func checkOnlyMeLeftGroupClean(t *tox.Tox, groupNumber int, _ /*peerNumber*/ int
 	return false
 }
 
+// 检测某个特定的peer已经离开
+func checkSpecificPeerGone() bool {
+	return false
+}
+
 // 无用群改名相关功能
 func makeDeletedGroupName(groupTitle string) string {
 	return fmt.Sprintf("#deleted_invited_groupchat_%s_%s",
@@ -412,8 +439,8 @@ var skipTitleChangeWhiteList *hashset.Set = hashset.New()
 
 func init() {
 	skipTitleChangeWhiteList.Add(
-		"415732B8A549B2A1F9A278B91C649B9E30F07330E8818246375D19E52F927C57",
-		"398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52")
+		"415732B8A549B2A1F9A278B91C649B9E30F07330E8818246375D19E52F927C57", // lainbot
+		"398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52" /* admin */)
 }
 
 // 检测是否是固定群组

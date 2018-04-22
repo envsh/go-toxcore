@@ -104,6 +104,17 @@ func GetAllFriendList(t *tox.Tox) (friends []uint32) {
 	return
 }
 
+func CountFriend(t *tox.Tox) (n int) {
+	for fn := uint32(0); fn < math.MaxUint32; fn++ {
+		if t.FriendExists(fn) {
+			n += 1
+		} else {
+			return
+		}
+	}
+	return
+}
+
 func FindFriendByName(t *tox.Tox, name string) (pubkey string, found bool) {
 	for i := uint32(0); i < 256; i++ {
 		if t.FriendExists(i) {
