@@ -229,6 +229,17 @@ func Connect(this *tox.Tox) error {
 	// bootstrap
 	_, err := this.Bootstrap("194.249.212.109", 33445, "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B")
 	_, err = this.Bootstrap("130.133.110.14", 33445, "461FA3776EF0FA655F1A05477DF1B3B614F7D6B124F7DB1DD4FE3C08B03B640F")
+	_, err = this.AddTcpRelay("194.249.212.109", 33445, "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B")
+	_, err = this.AddTcpRelay("130.133.110.14", 33445, "461FA3776EF0FA655F1A05477DF1B3B614F7D6B124F7DB1DD4FE3C08B03B640F")
+
+	nodes := get3nodes()
+	for _, n := range nodes {
+		_, err = this.Bootstrap(n.ipaddr, n.port, n.pubkey)
+		if n.status_tcp {
+			_, err = this.AddTcpRelay(n.ipaddr, n.port, n.pubkey)
+		}
+	}
+
 	return err
 }
 

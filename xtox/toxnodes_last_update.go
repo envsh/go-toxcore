@@ -1,3 +1,3 @@
 package xtox
-const toxnodes_last_update="20171030"
+const toxnodes_last_update = "20180426"
 

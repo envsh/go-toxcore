@@ -77,43 +77,53 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 	initThirdPartyNodes()
 	initToxNodes()
-	go pingNodes()
+	go pingNodesLoop()
 }
 
 // fixme: chown root.root toxtun-go && chmod u+s toxtun-go
+// setcap cap_net_raw=+ep /bin/goping-binary
 // should block
-func pingNodes() {
+func pingNodesLoop() {
 	stop := false
 	for !stop {
-		btime := time.Now()
-		errcnt := 0
-		for idx, node := range allNodes {
-			if false {
-				log.Println(idx, node)
-			}
-			if true {
-				// rtt, err := Ping0(node.ipaddr, 3)
-				rtt, err := Ping0(node.ipaddr, 3)
-				if err != nil {
-					// log.Println("ping", ok, node.ipaddr, rtt.String())
-					log.Println("ping", err, node.ipaddr, rtt.String())
-					errcnt += 1
-				}
-				if err == nil {
-					allNodes[idx].last_ping_rt = uint(time.Now().Unix())
-					allNodes[idx].rtt = rtt
+		pingNodes()
+		// TODO longer ping interval
+		time.Sleep(300 * time.Second)
+	}
+}
+func pingNodes() {
+	btime := time.Now()
+	errcnt := 0
+	var errs = make(map[string]int)
+	for idx, node := range allNodes {
+		if false {
+			log.Println(idx, node)
+		}
+		if true {
+			// rtt, err := Ping0(node.ipaddr, 3)
+			rtt, err := Ping2(node.ipaddr, 3)
+			if err != nil {
+				// log.Println("ping", ok, node.ipaddr, rtt.String())
+				// log.Println("ping", err, node.ipaddr, rtt.String())
+				errcnt += 1
+				if _, ok := errs[err.Error()]; ok {
+					errs[err.Error()] += 1
 				} else {
-					allNodes[idx].last_ping_rt = uint(0)
-					allNodes[idx].rtt = time.Duration(0)
+					errs[err.Error()] = 1
 				}
+			}
+			if err == nil {
+				allNodes[idx].last_ping_rt = uint(time.Now().Unix())
+				allNodes[idx].rtt = rtt
+			} else {
+				allNodes[idx].last_ping_rt = uint(0)
+				allNodes[idx].rtt = time.Duration(0)
 			}
 		}
-		etime := time.Now()
-		log.Printf("Pinged all=%d, errcnt=%d, %v\n", len(allNodes), errcnt, etime.Sub(btime))
-
-		// TODO longer ping interval
-		time.Sleep(30 * time.Second)
 	}
+	etime := time.Now()
+	log.Printf("Pinged all=%d, errcnt=%d, %v, %d, %+v\n", len(allNodes), errcnt, etime.Sub(btime),
+		len(errs), errs)
 }
 
 func initThirdPartyNodes() {
@@ -185,6 +195,7 @@ type ToxNode struct {
 	isthird    bool
 	ipaddr     string
 	port       uint16
+	tcp_ports  []uint16
 	pubkey     string
 	weight     int
 	usetimes   int

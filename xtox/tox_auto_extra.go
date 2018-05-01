@@ -532,6 +532,24 @@ func tryJoinOfficalGroupbotManagedGroups(t *tox.Tox) {
 	}
 }
 
+func tryFixGroupbotGroupInviteCmd(t *tox.Tox, msg string) {
+	if strings.HasPrefix(msg, "Group ") &&
+		strings.Contains(msg, "peers: ") &&
+		strings.Contains(msg, "Title: ") {
+		fields := strings.Split(msg, "|")
+		gnum_s := strings.TrimSpace(fields[0][6:])
+		title := strings.TrimSpace(fields[3][7:])
+
+		newcmd := fmt.Sprintf("invite %s", gnum_s)
+		if oldcmd, ok := fixedGroups[title]; ok {
+			if newcmd != oldcmd {
+				log.Println("Update groupbot invite cmd:", newcmd, title)
+				fixedGroups[title] = newcmd
+			}
+		}
+	}
+}
+
 // 保持群组名称，防止其他用户修改标题，来自CallbackConferenceTitle
 func tryKeepGroupTitle(t *tox.Tox, groupNumber uint32, peerNumber uint32, title string) {
 	// 在这调用这个函数不安全，有时成功，有时失败

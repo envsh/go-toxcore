@@ -98,6 +98,7 @@ func tryNew(ctx *ToxContext) (*tox.Tox, *tox.ToxOptions) {
 	opts := tox.ToxOptions{}
 	opts.ThreadSafe = true
 	opts.Udp_enabled = true
+	opts.Udp_enabled = false
 
 	if tox.FileExist(ctx.SaveFile) {
 		bcc, err := ioutil.ReadFile(ctx.SaveFile)
