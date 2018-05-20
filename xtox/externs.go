@@ -200,6 +200,14 @@ func ConferenceGetIdentifier(t *tox.Tox, groupNumber uint32) (groupId string, fo
 	if groupIdx, found := xt.groupIdentifiers.Get(groupNumber); found {
 		return groupIdx.(string), found
 	}
+	// backward get
+	groupId, err := t.ConferenceGetIdentifier(groupNumber)
+	if err == nil {
+		if !ConferenceIdIsEmpty(groupId) {
+			xt.groupIdentifiers.Put(groupNumber, groupId)
+			return groupId, true
+		}
+	}
 	return
 }
 
@@ -226,18 +234,50 @@ func ConferenceIdIsEmpty(groupId string) bool {
 }
 
 func Connect(this *tox.Tox) error {
+	defer func() {
+		if err := recover(); err != nil {
+		}
+	}()
+
 	// bootstrap
-	_, err := this.Bootstrap("194.249.212.109", 33445, "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B")
-	_, err = this.Bootstrap("130.133.110.14", 33445, "461FA3776EF0FA655F1A05477DF1B3B614F7D6B124F7DB1DD4FE3C08B03B640F")
-	_, err = this.AddTcpRelay("194.249.212.109", 33445, "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B")
-	_, err = this.AddTcpRelay("130.133.110.14", 33445, "461FA3776EF0FA655F1A05477DF1B3B614F7D6B124F7DB1DD4FE3C08B03B640F")
+	fixedNodes := []ToxNode{
+		ToxNode{Ipaddr: "194.249.212.109", Port: uint16(33445), Pubkey: "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B"},
+		ToxNode{Ipaddr: "130.133.110.14", Port: uint16(33445), Pubkey: "461FA3776EF0FA655F1A05477DF1B3B614F7D6B124F7DB1DD4FE3C08B03B640F"},
+		ToxNode{Ipaddr: "85.172.30.117", Port: uint16(33445), Pubkey: "8E7D0B859922EF569298B4D261A8CCB5FEA14FB91ED412A7603A585A25698832"},
+	}
+	var err error
+	for _, n := range fixedNodes {
+		_, err = this.Bootstrap(n.Ipaddr, n.Port, n.Pubkey)
+		_, err = this.AddTcpRelay(n.Ipaddr, n.Port, n.Pubkey)
+	}
 
 	nodes := get3nodes()
 	for _, n := range nodes {
-		_, err = this.Bootstrap(n.ipaddr, n.port, n.pubkey)
+		_, err = this.Bootstrap(n.Ipaddr, n.Port, n.Pubkey)
 		if n.status_tcp {
-			_, err = this.AddTcpRelay(n.ipaddr, n.port, n.pubkey)
+			_, err = this.AddTcpRelay(n.Ipaddr, n.Port, n.Pubkey)
 		}
+	}
+
+	return err
+}
+
+// connect one fixed node
+func ConnectFixed(this *tox.Tox) error {
+	defer func() {
+		if err := recover(); err != nil {
+		}
+	}()
+
+	// bootstrap
+	fixedNodes := []ToxNode{
+		ToxNode{Ipaddr: "cotox.tk", Port: uint16(33445), Pubkey: "AF66C5FFAA6CA67FB8E287A5B1D8581C15B446E12BF330963EF29E3AFB692918"},
+	}
+	var err error
+	for _, n := range fixedNodes {
+		_, err = this.Bootstrap(n.Ipaddr, n.Port, n.Pubkey)
+		_, err = this.AddTcpRelay(n.Ipaddr, n.Port, n.Pubkey)
+		break
 	}
 
 	return err
@@ -273,12 +313,24 @@ func FriendSendMessage(t *tox.Tox, friendNumber uint32, mtype int, msg string) {
 }
 
 // should block
+// TODO when OS hibenate long time, and then wakeup,
+// tick will loop run hibenate-time/tick count. like a nonblock deadloop.
+// this isn't what we want
 func Run(t *tox.Tox) {
+	_RunWithSleep(t)
+}
+func _RunWithTicker(t *tox.Tox) {
 	tmer := time.NewTicker(200 * time.Millisecond)
 	for {
 		select {
 		case <-tmer.C:
 			t.Iterate2(nil)
 		}
+	}
+}
+func _RunWithSleep(t *tox.Tox) {
+	for {
+		time.Sleep(200 * time.Millisecond)
+		t.Iterate2(nil)
 	}
 }

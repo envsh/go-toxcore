@@ -61,7 +61,10 @@ func New(ctx *ToxContext) *tox.Tox {
 		}
 		t.SelfSetName(xt.ctx.NickName)
 		t.SelfSetStatusMessage(xt.ctx.StatusMessage)
-		t.WriteSavedata(xt.ctx.SaveFile)
+		err := t.WriteSavedata(xt.ctx.SaveFile)
+		if err != nil {
+			log.Println(err)
+		}
 		log.Println("ID:", t.SelfGetAddress())
 		xt.initCallbacks()
 		xt.initHooks()
@@ -161,14 +164,20 @@ func (this *_XTox) initCallbacks() {
 	t.CallbackSelfConnectionStatusAdd(func(_ *tox.Tox, status int, userData interface{}) {
 		if status == tox.CONNECTION_NONE {
 		} else {
-			t.WriteSavedata(this.ctx.SaveFile)
+			err := t.WriteSavedata(this.ctx.SaveFile)
+			if err != nil {
+				log.Println(err)
+			}
 		}
 		this.tryReconn()
 	}, nil)
 	t.CallbackFriendConnectionStatusAdd(func(_ *tox.Tox, friendNumber uint32, status int, userData interface{}) {
 		// friendName, _ := t.FriendGetName(friendNumber)
 		// log.Println(friendNumber, friendName, status, tox.ConnStatusString(status))
-		t.WriteSavedata(this.ctx.SaveFile)
+		err := t.WriteSavedata(this.ctx.SaveFile)
+		if err != nil {
+			log.Println(err)
+		}
 	}, nil)
 	t.CallbackConferencePeerNameAdd(func(_ *tox.Tox, groupNumber uint32, peerNumber uint32, peerName string, userData interface{}) {
 		peerNamesx, found := this.groupPeerNames.Get(groupNumber)

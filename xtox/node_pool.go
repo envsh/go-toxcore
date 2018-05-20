@@ -32,12 +32,12 @@ var thirdPartyServers = []interface{}{
 func switchServer(t *tox.Tox) {
 	newNodes := get3nodes()
 	for _, node := range newNodes {
-		r1, err := t.Bootstrap(node.ipaddr, node.port, node.pubkey)
+		r1, err := t.Bootstrap(node.Ipaddr, node.Port, node.Pubkey)
 		if node.status_tcp {
-			r2, err := t.AddTcpRelay(node.ipaddr, node.port, node.pubkey)
-			log.Println("bootstrap(tcp):", r1, err, r2, node.ipaddr, node.last_ping, node.status_tcp)
+			r2, err := t.AddTcpRelay(node.Ipaddr, node.Port, node.Pubkey)
+			log.Println("bootstrap(tcp):", r1, err, r2, node.Ipaddr, node.last_ping, node.status_tcp)
 		} else {
-			log.Println("bootstrap(udp):", r1, err, node.ipaddr,
+			log.Println("bootstrap(udp):", r1, err, node.Ipaddr,
 				node.last_ping, node.status_tcp, node.last_ping_rt)
 		}
 	}
@@ -48,12 +48,12 @@ func get3nodes() (nodes [3]ToxNode) {
 	idxes := make(map[int]bool, 0)
 	currips := make(map[string]bool, 0)
 	for idx := 0; idx < len(currNodes); idx++ {
-		currips[currNodes[idx].ipaddr] = true
+		currips[currNodes[idx].Ipaddr] = true
 	}
 	for n := 0; n < len(allNodes)*3; n++ {
 		idx := rand.Int() % len(allNodes)
 		_, ok1 := idxes[idx]
-		_, ok2 := currips[allNodes[idx].ipaddr]
+		_, ok2 := currips[allNodes[idx].Ipaddr]
 		if !ok1 && !ok2 && allNodes[idx].status_tcp == true && allNodes[idx].last_ping_rt > 0 {
 			idxes[idx] = true
 			if len(idxes) == 3 {
@@ -101,7 +101,7 @@ func pingNodes() {
 		}
 		if true {
 			// rtt, err := Ping0(node.ipaddr, 3)
-			rtt, err := Ping2(node.ipaddr, 3)
+			rtt, err := Ping2(node.Ipaddr, 3)
 			if err != nil {
 				// log.Println("ping", ok, node.ipaddr, rtt.String())
 				// log.Println("ping", err, node.ipaddr, rtt.String())
@@ -130,9 +130,9 @@ func initThirdPartyNodes() {
 	for idx := 0; idx < 3*3; idx += 3 {
 		node := ToxNode{
 			isthird:      true,
-			ipaddr:       thirdPartyServers[idx].(string),
-			port:         thirdPartyServers[idx+1].(uint16),
-			pubkey:       thirdPartyServers[idx+2].(string),
+			Ipaddr:       thirdPartyServers[idx].(string),
+			Port:         thirdPartyServers[idx+1].(uint16),
+			Pubkey:       thirdPartyServers[idx+2].(string),
 			last_ping:    uint(time.Now().Unix()),
 			last_ping_rt: uint(time.Now().Unix()),
 			status_tcp:   true,
@@ -160,9 +160,9 @@ func initToxNodes() {
 				len(nodej.Get("tcp_ports").MustArray()))
 		*/
 		node := ToxNode{
-			ipaddr:       nodej.Get("ipv4").MustString(),
-			port:         uint16(nodej.Get("port").MustUint64()),
-			pubkey:       nodej.Get("public_key").MustString(),
+			Ipaddr:       nodej.Get("ipv4").MustString(),
+			Port:         uint16(nodej.Get("port").MustUint64()),
+			Pubkey:       nodej.Get("public_key").MustString(),
 			last_ping:    uint(nodej.Get("last_ping").MustUint64()),
 			status_tcp:   nodej.Get("status_tcp").MustBool(),
 			last_ping_rt: uint(time.Now().Unix()),
@@ -178,7 +178,7 @@ func initToxNodes() {
 	sort.Sort(ByRand(allNodes))
 	for idx, node := range allNodes {
 		if false {
-			log.Println(idx, node.ipaddr, node.port, node.last_ping)
+			log.Println(idx, node.Ipaddr, node.Port, node.last_ping)
 		}
 	}
 	log.Println("Load nodes:", len(allNodes))
@@ -193,10 +193,10 @@ var currNodes [3]ToxNode
 
 type ToxNode struct {
 	isthird    bool
-	ipaddr     string
-	port       uint16
-	tcp_ports  []uint16
-	pubkey     string
+	Ipaddr     string
+	Port       uint16
+	Tcp_ports  []uint16
+	Pubkey     string
 	weight     int
 	usetimes   int
 	legacy     int
