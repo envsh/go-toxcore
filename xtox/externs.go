@@ -1,9 +1,13 @@
 package xtox
 
 import (
+	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"gopp"
+	"log"
 	"math"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -192,7 +196,7 @@ func ConferenceGetByCookie(t *tox.Tox, cookie string) (groupNumber uint32, found
 	return
 }
 
-func ConferenceGetIdentifier(t *tox.Tox, groupNumber uint32) (groupId string, found bool) {
+func ConferenceGetIdentifier_s(t *tox.Tox, groupNumber uint32) (groupId string, found bool) {
 	ctxmu.Lock()
 	defer ctxmu.Unlock()
 
@@ -211,17 +215,18 @@ func ConferenceGetIdentifier(t *tox.Tox, groupNumber uint32) (groupId string, fo
 	return
 }
 
-func ConferenceGetByIdentifier(t *tox.Tox, cookie string) (groupNumber uint32, found bool) {
+func ConferenceGetByIdentifier(t *tox.Tox, identifier string) (groupNumber uint32, found bool) {
 	ctxmu.Lock()
 	defer ctxmu.Unlock()
 
 	xt := ctxs[t]
-	if groupNumberx, found := xt.groupIdentifiers.GetKey(cookie); found {
+	if groupNumberx, found := xt.groupIdentifiers.GetKey(identifier); found {
 		return groupNumberx.(uint32), found
 	}
 	return
 }
 
+// remote group number(2B)+type(1B)+identifier(32B)
 func ConferenceCookieToIdentifier(cookie string) string {
 	if len(cookie) >= 6 {
 		return cookie[6:]
@@ -233,9 +238,39 @@ func ConferenceIdIsEmpty(groupId string) bool {
 	return groupId == "" || strings.Replace(groupId, "0", "", -1) == ""
 }
 
+func ConferenceNameToIdentifier(name string) string {
+	hname := sha256.Sum256([]byte(name))
+	return strings.ToUpper(hex.EncodeToString(hname[:]))
+}
+
+func deperated_ConferenceNameToIdentifier(name string) string {
+	hname := md5.Sum([]byte(name))
+	rname := gopp.StrReverse(name)
+	hrname := md5.Sum([]byte(rname))
+	return hex.EncodeToString(hname[:]) + hex.EncodeToString(hrname[:])
+}
+
 func Connect(this *tox.Tox) error {
+	err := _Connect(this)
+
+	go func() {
+		for i := 0; i < 10; i++ {
+			time.Sleep(10 * time.Second)
+			if this.SelfGetConnectionStatus() > 0 {
+				break
+			}
+			_Connect(this)
+		}
+	}()
+
+	return err
+}
+
+func _Connect(this *tox.Tox) error {
 	defer func() {
 		if err := recover(); err != nil {
+			log.Println(err)
+			debug.PrintStack()
 		}
 	}()
 
@@ -253,6 +288,9 @@ func Connect(this *tox.Tox) error {
 
 	nodes := get3nodes()
 	for _, n := range nodes {
+		if n.Ipaddr == "" || n.Pubkey == "" {
+			continue
+		}
 		_, err = this.Bootstrap(n.Ipaddr, n.Port, n.Pubkey)
 		if n.status_tcp {
 			_, err = this.AddTcpRelay(n.Ipaddr, n.Port, n.Pubkey)
@@ -316,19 +354,30 @@ func FriendSendMessage(t *tox.Tox, friendNumber uint32, mtype int, msg string) {
 // TODO when OS hibenate long time, and then wakeup,
 // tick will loop run hibenate-time/tick count. like a nonblock deadloop.
 // this isn't what we want
-func Run(t *tox.Tox) {
-	_RunWithSleep(t)
+func Run(t *tox.Tox, tav *tox.ToxAV) {
+	_RunWithSleep(t, tav)
 }
-func _RunWithTicker(t *tox.Tox) {
+func _RunWithTicker(t *tox.Tox, tav *tox.ToxAV) {
 	tmer := time.NewTicker(200 * time.Millisecond)
 	for {
 		select {
 		case <-tmer.C:
 			t.Iterate2(nil)
+			if tav != nil {
+				tav.Iterate()
+			}
 		}
 	}
 }
-func _RunWithSleep(t *tox.Tox) {
+func _RunWithSleep(t *tox.Tox, tav *tox.ToxAV) {
+	if tav != nil {
+		go func() {
+			for {
+				time.Sleep(time.Duration(tav.IterationInterval()) * time.Millisecond)
+				tav.Iterate()
+			}
+		}()
+	}
 	for {
 		time.Sleep(200 * time.Millisecond)
 		t.Iterate2(nil)

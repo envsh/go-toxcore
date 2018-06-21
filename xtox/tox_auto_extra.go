@@ -94,8 +94,8 @@ func SetAutoBotFeatures(t *tox.Tox, f int) {
 			case tox.CONFERENCE_TYPE_TEXT:
 				groupNumber, err = t.ConferenceJoin(friendNumber, cookie)
 			case tox.CONFERENCE_TYPE_AV:
-				var groupNumber_ int
-				groupNumber_, err = t.JoinAVGroupChat(friendNumber, cookie)
+				var groupNumber_ uint32
+				groupNumber_, err = t.JoinAVGroupChat(friendNumber, cookie, nil)
 				groupNumber = uint32(groupNumber_)
 			}
 			gopp.ErrPrint(err, friendNumber, itype, cookie)
@@ -191,7 +191,8 @@ var lainbot = "415732B8A549B2A1F9A278B91C649B9E30F07330E8818246375D19E52F927C57F
 var nethlpbots = []string{
 	groupbot, //groupbot@toxme.io
 	"76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335A235342C48A39218F515C39A6", //echobot@toxme.io
-	"7F3948BDF42F2DA68468ADA46783B392EF8ADD60E8BDE3CD04981766B5A7883747824B7108D7", //toxme@toxme.io
+	// "7F3948BDF42F2DA68468ADA46783B392EF8ADD60E8BDE3CD04981766B5A7883747824B7108D7", //toxme@toxme.io, offline
+	"A922A51E1C91205B9F7992E2273107D47C72E8AE909C61C28A77A4A2A115431B14592AB38A3B", // toxirc
 	"DD7A68B345E0AA918F3544AA916B5CA6AED6DE80389BFF1EF7342DACD597943D62BDEED1FC67", // my echobot
 	//, // kalinaBot@toxme.io,
 	//, // LainBot@toxme.io,

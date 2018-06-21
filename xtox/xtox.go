@@ -18,6 +18,12 @@ features:
 // //go:generate ./getnodes.sh
 package xtox
 
+/*
+#include <tox/tox.h>
+#include <tox/toxav.h>
+*/
+import "C"
+
 import (
 	"io/ioutil"
 	"log"
@@ -42,10 +48,11 @@ type ToxContext struct {
 	SaveFile      string
 	NickName      string
 	StatusMessage string
+	ForceSet      bool
 }
 
 func NewToxContext(SaveFile, NickName, StatusMessage string) *ToxContext {
-	return &ToxContext{SaveFile, NickName, StatusMessage}
+	return &ToxContext{SaveFile, NickName, StatusMessage, false}
 }
 
 func New(ctx *ToxContext) *tox.Tox {
@@ -59,8 +66,14 @@ func New(ctx *ToxContext) *tox.Tox {
 		if ctx != nil {
 			xt.ctx = ctx
 		}
-		t.SelfSetName(xt.ctx.NickName)
-		t.SelfSetStatusMessage(xt.ctx.StatusMessage)
+		xt.Tox = t
+		xt.toxcore = (*C.Tox)(GetCTox(t))
+
+		// when current name is empty for force set
+		if t.SelfGetName() == "" || ctx.ForceSet == true {
+			t.SelfSetName(xt.ctx.NickName)
+			t.SelfSetStatusMessage(xt.ctx.StatusMessage)
+		}
 		err := t.WriteSavedata(xt.ctx.SaveFile)
 		if err != nil {
 			log.Println(err)
@@ -84,6 +97,12 @@ var ctxmu sync.Mutex
 var ctxs = map[*tox.Tox]*_XTox{}
 
 type _XTox struct {
+	*tox.Tox
+	*tox.ToxAV
+
+	toxcore *C.Tox
+	toxav   *C.ToxAV
+
 	opts             *tox.ToxOptions
 	ctx              *ToxContext
 	t                *tox.Tox
@@ -208,7 +227,7 @@ func (this *_XTox) initCallbacks() {
 				deletedKeys = append(deletedKeys, pubkeyx.(string))
 			}
 		}
-		log.Println("added:", len(addedKeys), "deleted:", len(deletedKeys), "gn:", groupNumber)
+		// log.Println("added:", len(addedKeys), "deleted:", len(deletedKeys), "gn:", groupNumber)
 		peerKeys.Clear()
 		for num, pubkey := range pubkeys {
 			peerKeys.Put(uint32(num), pubkey)

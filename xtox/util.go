@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 
 	tox "github.com/TokTok/go-toxcore-c"
 	funk "github.com/thoas/go-funk"
@@ -32,7 +33,7 @@ func FileExist(fname string) bool {
 }
 
 // the go-toxcore-c has data lost problem
-// TODO we need first write tmp file, and if ok, then mv to real file
+// we need first write tmp file, and if ok, then mv to real file
 func WriteSavedata(this *tox.Tox, fname string) error {
 	if !FileExist(fname) {
 		err := ioutil.WriteFile(fname, this.GetSavedata(), 0755)
@@ -46,8 +47,21 @@ func WriteSavedata(this *tox.Tox, fname string) error {
 		}
 		liveData := this.GetSavedata()
 		if bytes.Compare(data, liveData) != 0 {
-			err := ioutil.WriteFile(fname, this.GetSavedata(), 0755)
+			tfp, err := ioutil.TempFile(filepath.Dir(fname), "gotcb")
 			if err != nil {
+				return err
+			}
+			if _, err := tfp.Write(liveData); err != nil {
+				return err
+			}
+			tfname := tfp.Name()
+			if err := tfp.Close(); err != nil {
+				return err
+			}
+			if err := os.Remove(fname); err != nil {
+				return err
+			}
+			if err := os.Rename(filepath.Dir(fname)+"/"+tfname, fname); err != nil {
 				return err
 			}
 		}
@@ -58,4 +72,8 @@ func WriteSavedata(this *tox.Tox, fname string) error {
 
 func LoadSavedata(this *tox.Tox, fname string) ([]byte, error) {
 	return ioutil.ReadFile(fname)
+}
+
+func CallStateString(state uint32) string {
+	return ""
 }
