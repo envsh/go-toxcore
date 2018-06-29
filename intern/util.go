@@ -4,6 +4,7 @@ package toxin
 #include <util.h>
 */
 import "C"
+import "unsafe"
 
 func host_to_net(n uint16) uint16 {
 	return (n << 8) | (n >> 8)
@@ -24,4 +25,9 @@ func is_timeout(timestamp uint64, timeout uint64) bool {
 		return false
 	}
 	return true
+}
+
+func StrCPtr(s string) *C.uint8_t {
+	b := []byte(s)
+	return (*C.uint8_t)(unsafe.Pointer(&b[0]))
 }

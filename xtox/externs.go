@@ -174,6 +174,18 @@ func ConferenceGetTitle(t *tox.Tox, groupNumber uint32) (title string, found boo
 	return
 }
 
+// support both text and audio
+func ConferenceJoin(t *tox.Tox, friendNumber uint32, itype uint8, cookie string,
+	cbfn func(_ *tox.Tox, groupNumber uint32, peerNumber uint32, pcm []byte,
+		samples uint, channels uint8, sample_rate uint32, userData interface{})) (uint32, error) {
+	// 0000 4byte is peer group number
+	if cookie[5] == 49 /* char '1' */ && itype == tox.CONFERENCE_TYPE_AV {
+		return t.JoinAVGroupChat(friendNumber, cookie, cbfn)
+	} else {
+		return t.ConferenceJoin(friendNumber, cookie)
+	}
+}
+
 func ConferenceGetCookie(t *tox.Tox, groupNumber uint32) (cookie string, found bool) {
 	ctxmu.Lock()
 	defer ctxmu.Unlock()

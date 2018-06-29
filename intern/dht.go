@@ -97,11 +97,11 @@ func (this *DHT) GetFriendIP(pubkey string) (ip string, port uint16) {
 		port = net_to_host(uint16(ip_port.port))
 	}
 
-	if true {
+	if false {
 		friendo := addrStep(unsafe.Pointer(this.dht.friends_list), 2*C.sizeof_DHT_Friend)
 		friendo_ := (*C.DHT_Friend)(friendo)
 		pk_ := ppkey2str(&friendo_.public_key[0])
-		log.Println(pk_)
+		log.Println(r, pk_ == pubkey, pk_, pubkey)
 	}
 
 	return
@@ -109,6 +109,8 @@ func (this *DHT) GetFriendIP(pubkey string) (ip string, port uint16) {
 
 func IdClosest()  {}
 func AddToLists() {}
+
+func (this *DHT) NumFriends() int { return int(this.dht.num_friends) }
 
 func (this *DHT) NodeAddableToCloseList() {}
 func (this *DHT) GetCloseNodes()          {}
@@ -274,6 +276,9 @@ func ppkey2str(key *C.uint8_t) string {
 	pubkey := strings.ToUpper(hex.EncodeToString(pubkey_bin))
 	return pubkey
 }
+
+// constant array
+func capkey2str(key [32]C.uchar) string { return ppkey2str(&key[0]) }
 
 func str2ppkey(pubkey string, key *C.uint8_t) {
 	keybin, _ := hex.DecodeString(pubkey)
