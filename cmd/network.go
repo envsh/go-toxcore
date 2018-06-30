@@ -134,7 +134,7 @@ func (this *NetworkCore) RegisterHandle(ptype uint8, cbfn PacketHandleFunc, obje
 	this.PacketHandlers[ptype] = PacketHandle{cbfn, object}
 }
 
-///
+/// for read here
 func (this *NetworkCore) start() { go this.doPoll(nil) }
 func (this *NetworkCore) doPoll(cbdata interface{}) {
 	for {
