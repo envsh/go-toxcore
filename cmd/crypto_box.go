@@ -22,9 +22,10 @@ const SHA512_SIZE = 64
 
 type byteArray []byte
 
-func (this *byteArray) Bytes() []byte { return *this }
-func (this *byteArray) ToHex() string { return strings.ToUpper(hex.EncodeToString(*this)) }
-func (this *byteArray) Len() int      { return len(*this) }
+func (this *byteArray) Bytes() []byte  { return *this }
+func (this *byteArray) BinStr() string { return string(*this) }
+func (this *byteArray) ToHex() string  { return strings.ToUpper(hex.EncodeToString(*this)) }
+func (this *byteArray) Len() int       { return len(*this) }
 func (this *byteArray) Equal(that []byte) bool {
 	return len(*this) == len(that) && bytes.Compare(*this, that) == 0
 }
