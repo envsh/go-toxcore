@@ -9,8 +9,6 @@ import (
 	"net"
 	"time"
 	"unsafe"
-
-	"github.com/Workiva/go-datastructures/queue"
 )
 
 /* Maximum number of clients stored per friend. */
@@ -78,7 +76,8 @@ type ClientData struct {
 	cmppk *CryptoKey // selfpk
 }
 
-func (this *ClientData) Compare(thati queue.Item) int {
+func (this *ClientData) Key() string { return this.Pubkey.BinStr() }
+func (this *ClientData) Compare(thati PLItem) int {
 	that := thati.(*ClientData)
 	n := IDClosest(this.cmppk, this.Pubkey, that.Pubkey)
 	if n == 1 {
@@ -98,14 +97,15 @@ type NodeFormat struct {
 	cmppk *CryptoKey // selfpk
 }
 
-func (this *NodeFormat) Compare(that queue.Item) int {
+func (this *NodeFormat) Key() string { return this.Pubkey.BinStr() }
+func (this *NodeFormat) Compare(that PLItem) int {
 	return IDClosest(this.cmppk, this.Pubkey, that.(*NodeFormat).Pubkey)
 }
 
 type DHTFriend struct {
 	Pubkey *CryptoKey
 
-	ClientList *queue.PriorityQueue // Client_data client_list[MAX_FRIEND_CLIENTS];
+	ClientList *PriorityList // Client_data client_list[MAX_FRIEND_CLIENTS];
 
 	/* Time at which the last get_nodes request was sent. */
 	LastGetnode time.Time
@@ -124,7 +124,7 @@ type DHTFriend struct {
 	   } callbacks[DHT_FRIEND_MAX_LOCKS];
 	*/
 
-	ToBootstrap *queue.PriorityQueue //    Node_format to_bootstrap[MAX_SENT_NODES];
+	ToBootstrap *PriorityList //    Node_format to_bootstrap[MAX_SENT_NODES];
 
 	//
 	cmppk *CryptoKey
@@ -132,16 +132,14 @@ type DHTFriend struct {
 
 func NewDHTFriend() *DHTFriend {
 	this := &DHTFriend{}
-	this.ClientList = queue.NewPriorityQueue(MAX_FRIEND_CLIENTS, false)
-	this.ToBootstrap = queue.NewPriorityQueue(MAX_SENT_NODES, false)
+	this.ClientList = NewPriorityList(MAX_FRIEND_CLIENTS)
+	this.ToBootstrap = NewPriorityList(MAX_SENT_NODES)
 	return this
 }
 
 func (this *DHTFriend) AddNode(n *NodeFormat) {
 	this.ClientList.Put(n)
-	pqkeepn(this.ClientList, MAX_FRIEND_CLIENTS)
 	this.ToBootstrap.Put(n)
-	pqkeepn(this.ToBootstrap, MAX_SENT_NODES)
 }
 
 // name to SharedKeyInfo???
@@ -173,7 +171,7 @@ type DHT struct {
 	SelfPubkey *CryptoKey
 	SelfSeckey *CryptoKey
 
-	CloseClientList *queue.PriorityQueue // [LCLIENT_LIST]*ClientData
+	CloseClientList *PriorityList // [LCLIENT_LIST]*ClientData
 
 	FriendsList map[string]*DHTFriend // binpk =>
 
@@ -182,7 +180,7 @@ type DHT struct {
 
 	CryptoPacketHandlers map[uint8]CryptoPacketHandle
 
-	ToBootstrap *queue.PriorityQueue // [MAX_CLOSE_TO_BOOTSTRAP_NODES]*NodeFormat
+	ToBootstrap *PriorityList // [MAX_CLOSE_TO_BOOTSTRAP_NODES]*NodeFormat
 }
 
 func NewDHT() *DHT {
@@ -195,9 +193,9 @@ func NewDHT() *DHT {
 
 	this.SharedKeysRecv = make(map[string]*SharedKey)
 	this.SharedKeysSent = make(map[string]*SharedKey)
-	this.CloseClientList = queue.NewPriorityQueue(LCLIENT_LIST, false)
+	this.CloseClientList = NewPriorityList(LCLIENT_LIST)
 	this.FriendsList = make(map[string]*DHTFriend)
-	this.ToBootstrap = queue.NewPriorityQueue(MAX_CLOSE_TO_BOOTSTRAP_NODES, false)
+	this.ToBootstrap = NewPriorityList(MAX_CLOSE_TO_BOOTSTRAP_NODES) //(MAX_CLOSE_TO_BOOTSTRAP_NODES)
 	this.CryptoPacketHandlers = make(map[uint8]CryptoPacketHandle)
 
 	this.Neto.RegisterHandle(NET_PACKET_GET_NODES, this.HandleGetNodes, this)
@@ -243,21 +241,22 @@ func (this *DHT) doDHT() {
 }
 
 func (this *DHT) doClosest() {
-	items, err := this.ToBootstrap.Get(this.ToBootstrap.Len())
-	gopp.ErrPrint(err)
-	err = this.ToBootstrap.Put(items...)
-	gopp.ErrPrint(err)
-	if len(items) > 0 {
-		idx := rand.Int() % len(items)
-		item := items[idx].(*NodeFormat)
-		this.GetNodes(item.Addr, item.Pubkey, this.SelfPubkey)
+	// this.BootstrapFromAddr(serv_addr, NewCryptoKeyFromHex(serv_pubkey_str))
+	items := this.ToBootstrap.Head(this.ToBootstrap.Len())
+	if true {
+		if len(items) > 0 {
+			idx := rand.Int() % len(items)
+			item := items[idx].(*NodeFormat)
+			this.GetNodes(item.Addr, item.Pubkey, this.SelfPubkey)
+		}
 	}
-	/*
+
+	if false {
 		for _, itemi := range items {
 			item := itemi.(*NodeFormat)
 			this.GetNodes(item.Addr, item.Pubkey, this.SelfPubkey)
 		}
-	*/
+	}
 }
 
 func (this *DHT) doDHTFriends() {
@@ -325,12 +324,12 @@ func (this *DHT) HandleSendNodesIpv6(object interface{}, addr net.Addr, data []b
 		// process node
 		nodfmt := &NodeFormat{Pubkey: nodekey, Addr: addro, cmppk: this.SelfPubkey}
 		this.ToBootstrap.Put(nodfmt)
-		pqkeepn(this.ToBootstrap, MAX_CLOSE_TO_BOOTSTRAP_NODES)
+
 		clidat := &ClientData{Pubkey: nodekey, cmppk: this.SelfPubkey}
 		clidat.Assoc.Addr = addro
 		this.CloseClientList.Put(clidat)
-		pqkeepn(this.CloseClientList, LCLIENT_LIST)
-		log.Println("tobslen:", this.ToBootstrap.Len(), "closestlen:", this.CloseClientList.Len())
+		log.Println("tobslen:", numNodes, this.ToBootstrap.Len(), "closestlen:", this.CloseClientList.Len())
+
 		for _, dhtfrnd := range this.FriendsList {
 			dhtfrnd.AddNode(nodfmt)
 		}
@@ -382,7 +381,7 @@ func (this *DHT) GetNodes(addr net.Addr, pubkey *CryptoKey, client_id *CryptoKey
 		}
 		// log.Println("send done")
 	}()
-	log.Println("Sent get nodes request:", len(pkt), addr.String(), pingid)
+	log.Println("Sent getnodes request:", len(pkt), addr.String(), pingid)
 }
 
 func (this *DHT) Bootstrap(addr net.Addr, pubkey *CryptoKey) error {
@@ -436,12 +435,6 @@ func (this *DHT) GetSharedKey(shrkeys map[string]*SharedKey, pubkey *CryptoKey) 
 		shrkeyo.TimesRequested += 1
 		shrkeys[pubkey.BinStr()] = shrkeyo
 		return shrkey
-	}
-}
-
-func pqkeepn(q *queue.PriorityQueue, n int) {
-	for q.Len() > n {
-		q.Get(1)
 	}
 }
 

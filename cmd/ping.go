@@ -55,6 +55,7 @@ func (this *Ping) SendPingResponse(source net.Addr, pubkey *CryptoKey, pingid ui
 
 	nonce := CBRandomNonce()
 	encrypted, err := EncryptDataSymmetric(shrkey, nonce, plain.Bytes())
+	gopp.ErrPrint(err)
 
 	pkt := gopp.NewBufferZero()
 	pkt.WriteByte(byte(NET_PACKET_PING_RESPONSE))
@@ -65,4 +66,12 @@ func (this *Ping) SendPingResponse(source net.Addr, pubkey *CryptoKey, pingid ui
 	_, err = this.dhto.Neto.WriteTo(pkt.Bytes(), source)
 	gopp.ErrPrint(err, pingid)
 	log.Println("ping response:", source, pkt.Len())
+}
+
+/////
+func IsTimeout4Now(oldtime time.Time, timeout int) bool {
+	return int(time.Since(oldtime).Seconds()) > timeout
+}
+func IsTimeout4Time(newtime, oldtime time.Time, timeout int) bool {
+	return int(newtime.Sub(oldtime).Seconds()) > timeout
 }
