@@ -12,19 +12,21 @@ import (
 type PLItem interface {
 	Compare(PLItem) int
 	Key() string // unique key
+	Update(PLItem)
 }
 
+// unique priority list
 type PriorityList struct {
 	max  int
 	mu   sync.RWMutex
-	keys map[string]bool
+	keys map[string]PLItem
 	lst  []PLItem
 }
 
 func NewPriorityList(max int) *PriorityList {
 	this := &PriorityList{}
 	this.max = max
-	this.keys = map[string]bool{}
+	this.keys = map[string]PLItem{}
 	this.lst = []PLItem{}
 	return this
 }
@@ -52,15 +54,14 @@ func (this *PriorityList) Put(item PLItem) bool {
 	}
 
 	this.lst = append(this.lst[:i], append([]PLItem{item}, this.lst[i:]...)...)
-	this.keys[item.Key()] = true
+	this.keys[item.Key()] = item
 
 	// remove truncated
 	if len(this.lst) > this.max {
-		todrops := this.lst[this.max:]
-		this.lst = this.lst[:this.max]
-		for _, todrop := range todrops {
+		for _, todrop := range this.lst[this.max:] {
 			delete(this.keys, todrop.Key())
 		}
+		this.lst = this.lst[:this.max]
 	}
 
 	if len(this.lst) != len(this.keys) {
@@ -74,6 +75,15 @@ func (this *PriorityList) replaceItem(item PLItem) {
 	for i := 0; i < len(this.lst); i++ {
 		if this.lst[i].Key() == item.Key() {
 			this.lst[i] = item
+			break
+		}
+	}
+}
+
+func (this *PriorityList) updateItem(item PLItem) {
+	for i := 0; i < len(this.lst); i++ {
+		if this.lst[i].Key() == item.Key() {
+			this.lst[i].Update(item)
 			break
 		}
 	}
@@ -111,6 +121,75 @@ func (this *PriorityList) Last() (ret PLItem) {
 	defer this.mu.RUnlock()
 	if len(this.lst) > 0 {
 		return this.lst[len(this.lst)-1]
+	}
+	return nil
+}
+
+func (this *PriorityList) Remove(item PLItem) bool {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	if _, ok := this.keys[item.Key()]; !ok {
+		return false
+	}
+
+	var i int = 0
+	for ; i < len(this.lst); i++ {
+		if this.lst[i].Key() == item.Key() {
+			break
+		}
+	}
+
+	this.lst = append(this.lst[:i], this.lst[i+1:]...)
+	delete(this.keys, item.Key())
+	return true
+}
+
+// snapshot
+func (this *PriorityList) EachSnap(f func(itemi PLItem)) {
+	if len(this.lst) == 0 || f == nil {
+		return
+	}
+	var lst []PLItem
+	this.mu.RLock()
+	for _, item := range this.lst {
+		lst = append(lst, item)
+	}
+	this.mu.RUnlock()
+	for _, item := range lst {
+		f(item)
+	}
+}
+
+// not call other method in this call, or deadlock
+func (this *PriorityList) EachInline(f func(itemi PLItem)) {
+	if len(this.lst) == 0 || f == nil {
+		return
+	}
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	for _, item := range this.lst {
+		f(item)
+	}
+}
+
+// not call other method in this call, or deadlock
+func (this *PriorityList) Select(f func(itemi PLItem) bool) (slts []PLItem) {
+	this.mu.RLock()
+	defer this.mu.RUnlock()
+	for _, item := range this.lst {
+		if f(item) {
+			slts = append(slts, item)
+		}
+	}
+	return
+}
+
+func (this *PriorityList) GetByKey(key string) PLItem {
+	this.mu.RLock()
+	defer this.mu.RUnlock()
+	if item, ok := this.keys[key]; ok {
+		return item
 	}
 	return nil
 }

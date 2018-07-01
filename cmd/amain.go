@@ -13,7 +13,7 @@ func main() {
 	dht.SetKeyPair(self_pubkey, self_seckey)
 	srvpk := NewCryptoKeyFromHex(serv_pubkey_str)
 	dht.BootstrapFromAddr(serv_addr, srvpk)
-	log.Println("hhh")
+	log.Println("main selecting...")
 	/*
 		c := NewTCPClient()
 		c.DoHandshake()

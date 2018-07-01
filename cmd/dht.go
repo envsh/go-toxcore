@@ -56,15 +56,38 @@ const CRYPTO_PACKET_DHTPK = 156
 const CRYPTO_PACKET_NAT_PING = 254 /* NAT ping crypto packet ID. */
 
 /////////
+
+/* The timeout after which a node is discarded completely. */
+const KILL_NODE_TIMEOUT = (BAD_NODE_TIMEOUT + PING_INTERVAL)
+
+/* Ping interval in seconds for each random sending of a get nodes request. */
+const GET_NODE_INTERVAL = 20
+
+const MAX_PUNCHING_PORTS = 48
+
+/* Interval in seconds between punching attempts*/
+const PUNCH_INTERVAL = 3
+
+const MAX_NORMAL_PUNCHING_TRIES = 5
+
+const NAT_PING_REQUEST = 0
+const NAT_PING_RESPONSE = 1
+
+/* Number of get node requests to send to quickly find close nodes. */
+const MAX_BOOTSTRAP_TIMES = 5
+
+const ASSOC_COUNT = 2
+
+/////////
 type IPPTsPng struct {
 	Addr       net.Addr
-	Timestamp  time.Time
-	LastPinged time.Time
+	Timestamp  time.Time // last see it time
+	LastPinged time.Time // last ping start time
 
 	// Hardening hardening;
 	/* Returned by this node. Either our friend or us. */
-	RetAddr      net.Addr
-	RetTimestamp uint64
+	RetAddr      net.Addr  // ???
+	RetTimestamp time.Time // ???
 }
 
 type ClientData struct {
@@ -74,6 +97,11 @@ type ClientData struct {
 	Assoc IPPTsPng
 
 	cmppk *CryptoKey // selfpk
+}
+
+func NewClientData() *ClientData {
+	this := &ClientData{}
+	return this
 }
 
 func (this *ClientData) Key() string { return this.Pubkey.BinStr() }
@@ -88,6 +116,17 @@ func (this *ClientData) Compare(thati PLItem) int {
 	}
 	return n
 }
+func (this *ClientData) Update(thati PLItem) {
+	that := thati.(*ClientData)
+	if !that.Pubkey.Equal(this.Pubkey.Bytes()) {
+		log.Panicln("wtf", that.Pubkey.ToHex(), this.Pubkey.ToHex())
+	}
+	this.Assoc.Addr = that.Assoc.Addr
+	this.Assoc.Timestamp = that.Assoc.Timestamp
+	// this.Assoc.LastPinged = that.Assoc.LastPinged // dont modify here
+	this.Assoc.RetTimestamp = that.Assoc.RetTimestamp
+	this.Assoc.RetAddr = that.Assoc.RetAddr
+}
 
 type NodeFormat struct {
 	Pubkey *CryptoKey
@@ -101,6 +140,7 @@ func (this *NodeFormat) Key() string { return this.Pubkey.BinStr() }
 func (this *NodeFormat) Compare(that PLItem) int {
 	return IDClosest(this.cmppk, this.Pubkey, that.(*NodeFormat).Pubkey)
 }
+func (this *NodeFormat) Update(thati PLItem) {}
 
 type DHTFriend struct {
 	Pubkey *CryptoKey
@@ -171,7 +211,9 @@ type DHT struct {
 	SelfPubkey *CryptoKey
 	SelfSeckey *CryptoKey
 
-	CloseClientList *PriorityList // [LCLIENT_LIST]*ClientData
+	CloseClientList     *PriorityList // [LCLIENT_LIST]*ClientData
+	CloseLastGetNodes   time.Time
+	CloseBootstrapTimes uint32
 
 	FriendsList map[string]*DHTFriend // binpk =>
 
@@ -240,14 +282,19 @@ func (this *DHT) doDHT() {
 	log.Println("doDHT done")
 }
 
+// getnodes from ToBootstrap
+// getnodes from ClientData
 func (this *DHT) doClosest() {
+	// getnodes from ToBootstrap
 	// this.BootstrapFromAddr(serv_addr, NewCryptoKeyFromHex(serv_pubkey_str))
+	sentOfBS, sentOfClosest, sentOfFakeBS := 0, 0, 0
 	items := this.ToBootstrap.Head(this.ToBootstrap.Len())
 	if true {
 		if len(items) > 0 {
 			idx := rand.Int() % len(items)
 			item := items[idx].(*NodeFormat)
 			this.GetNodes(item.Addr, item.Pubkey, this.SelfPubkey)
+			sentOfBS += 1
 		}
 	}
 
@@ -255,8 +302,61 @@ func (this *DHT) doClosest() {
 		for _, itemi := range items {
 			item := itemi.(*NodeFormat)
 			this.GetNodes(item.Addr, item.Pubkey, this.SelfPubkey)
+			sentOfBS += 1
 		}
 	}
+
+	// getnodes from ClientData
+	// 1, select PING_INTERVAL timeout but not KILL_NODE_TIMEOUT nodes, and then call getnodes
+	// 2, select good nodes, not BAD_NODE_TIMEOUT, and then call random one as bootstrap
+	nowt := time.Now()
+	var needGetNodes, goodNodes []PLItem
+	var idx int
+	this.CloseClientList.EachSnap(func(itemi PLItem) {
+		item := itemi.(*ClientData)
+		if false {
+			log.Printf("no: %d, KILL_NODE_TIMEOUT:%d:%v(%s), PING_INTERVAL:%d: %v, BAD_NODE_TIMEOUT:%d: %v(%s)\n",
+				idx,
+				KILL_NODE_TIMEOUT,
+				IsTimeout4Time(nowt, item.Assoc.LastPinged, KILL_NODE_TIMEOUT),
+				gopp.TimeToFmt1(item.Assoc.LastPinged),
+				PING_INTERVAL,
+				IsTimeout4Time(nowt, item.Assoc.LastPinged, PING_INTERVAL),
+				BAD_NODE_TIMEOUT,
+				IsTimeout4Time(nowt, item.Assoc.Timestamp, BAD_NODE_TIMEOUT),
+				gopp.TimeToFmt1(item.Assoc.Timestamp))
+		}
+		idx++
+		if !IsTimeout4Time(nowt, item.Assoc.LastPinged, KILL_NODE_TIMEOUT) {
+			if IsTimeout4Time(nowt, item.Assoc.LastPinged, PING_INTERVAL) {
+				needGetNodes = append(needGetNodes, itemi)
+			}
+			if !IsTimeout4Time(nowt, item.Assoc.Timestamp, BAD_NODE_TIMEOUT) {
+				goodNodes = append(goodNodes, itemi)
+			}
+		}
+	})
+	log.Println("needs:", len(needGetNodes), "goods:", len(goodNodes), "total:", this.CloseClientList.Len())
+	getidx := rand.Intn(gopp.IfElseInt(len(needGetNodes) == 0, 1, len(needGetNodes)))
+	for i, itemi := range needGetNodes {
+		if i == getidx {
+			item := itemi.(*ClientData)
+			item.Assoc.LastPinged = nowt
+			this.GetNodes(item.Assoc.Addr, item.Pubkey, this.SelfPubkey)
+			sentOfClosest += 1
+		}
+	}
+	if len(goodNodes) > 0 && (IsTimeout4Time(nowt, this.CloseLastGetNodes, GET_NODE_INTERVAL) ||
+		this.CloseBootstrapTimes < MAX_BOOTSTRAP_TIMES) {
+		log.Println("Will random getnodes to a closest node:", this.CloseBootstrapTimes)
+		this.CloseLastGetNodes = nowt
+		this.CloseBootstrapTimes += 1
+		getidx := rand.Int() % len(goodNodes)
+		item := goodNodes[getidx].(*ClientData)
+		this.GetNodes(item.Assoc.Addr, item.Pubkey, this.SelfPubkey)
+		sentOfFakeBS += 1
+	}
+	log.Printf("-------BS:%d, FakeBS: %d, Closest: %d--------\n", sentOfBS, sentOfFakeBS, sentOfClosest)
 }
 
 func (this *DHT) doDHTFriends() {
@@ -317,7 +417,7 @@ func (this *DHT) HandleSendNodesIpv6(object interface{}, addr net.Addr, data []b
 
 		nodekey_, err := tmpbuf.Readn(PUBLIC_KEY_SIZE)
 		nodekey := NewCryptoKey(nodekey_)
-		log.Println("node: ", i, addro.Network(), addro.String(), nodekey.ToHex())
+		// log.Println("node: ", i, addro.Network(), addro.String(), nodekey.ToHex())
 
 		offset += tmplen - tmpbuf.Len()
 
@@ -327,8 +427,12 @@ func (this *DHT) HandleSendNodesIpv6(object interface{}, addr net.Addr, data []b
 
 		clidat := &ClientData{Pubkey: nodekey, cmppk: this.SelfPubkey}
 		clidat.Assoc.Addr = addro
+		clidat.Assoc.RetAddr = addro
+		clidat.Assoc.Timestamp = time.Now()
+		clidat.Assoc.LastPinged = time.Now()
+		clidat.Assoc.RetTimestamp = time.Now()
 		this.CloseClientList.Put(clidat)
-		log.Println("tobslen:", numNodes, this.ToBootstrap.Len(), "closestlen:", this.CloseClientList.Len())
+		// log.Println("tobslen:", numNodes, this.ToBootstrap.Len(), "closestlen:", this.CloseClientList.Len())
 
 		for _, dhtfrnd := range this.FriendsList {
 			dhtfrnd.AddNode(nodfmt)
@@ -428,7 +532,7 @@ func (this *DHT) GetSharedKey(shrkeys map[string]*SharedKey, pubkey *CryptoKey) 
 	} else {
 		shrkey, err := CBBeforeNm(pubkey, this.SelfSeckey)
 		gopp.ErrPrint(err)
-		log.Println("New shrkey for:", pubkey.ToHex(), shrkey.ToHex(), len(shrkeys)+1)
+		// log.Println("New shrkey for:", pubkey.ToHex(), shrkey.ToHex(), len(shrkeys)+1)
 		shrkeyo := &SharedKey{}
 		shrkeyo.Shrkey = shrkey
 		shrkeyo.Pubkey = pubkey
@@ -462,6 +566,11 @@ func IDClosest(pk *CryptoKey, pk1 *CryptoKey, pk2 *CryptoKey) int {
 }
 
 // need?
-func IDDistance(pk1 *CryptoKey, pk2 *CryptoKey) int {
-	return 0
+func IDDistance(pk1 *CryptoKey, pk2 *CryptoKey) []byte {
+	dist := make([]byte, PUBLIC_KEY_SIZE)
+	pk1b, pk2b := pk1.Bytes(), pk2.Bytes()
+	for i := 0; i < PUBLIC_KEY_SIZE; i++ {
+		dist[i] = pk1b[i] ^ pk2b[i]
+	}
+	return dist
 }
