@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"gopp"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"time"
@@ -145,7 +146,7 @@ func (this *NodeFormat) Update(thati PLItem) {}
 type DHTFriend struct {
 	Pubkey *CryptoKey
 
-	ClientList *PriorityList // Client_data client_list[MAX_FRIEND_CLIENTS];
+	ClientList *PriorityList // Client_data[MAX_FRIEND_CLIENTS];
 
 	/* Time at which the last get_nodes request was sent. */
 	LastGetnode time.Time
@@ -156,19 +157,21 @@ type DHTFriend struct {
 	// NAT         nat;
 
 	LockCount uint16
-	/*
-	   struct {
-	       void (*ip_callback)(void *, int32_t, IP_Port);
-	       void *data;
-	       int32_t number;
-	   } callbacks[DHT_FRIEND_MAX_LOCKS];
-	*/
+	Callbacks []struct {
+		IpCallback func(interface{}, int32, net.Addr)
+		Data       interface{}
+		Number     int32
+	}
 
-	ToBootstrap *PriorityList //    Node_format to_bootstrap[MAX_SENT_NODES];
+	ToBootstrap *PriorityList //    Node_format[MAX_SENT_NODES];
 
 	//
 	cmppk *CryptoKey
 }
+
+func (this *DHTFriend) Key() string             { return this.Pubkey.BinStr() }
+func (this *DHTFriend) Compare(that PLItem) int { return 1 }
+func (this *DHTFriend) Update(thati PLItem)     {}
 
 func NewDHTFriend() *DHTFriend {
 	this := &DHTFriend{}
@@ -215,7 +218,7 @@ type DHT struct {
 	CloseLastGetNodes   time.Time
 	CloseBootstrapTimes uint32
 
-	FriendsList map[string]*DHTFriend // binpk =>
+	FriendsList *PriorityList // binpk => *DHTFriend
 
 	SharedKeysRecv map[string]*SharedKey // binpk =>
 	SharedKeysSent map[string]*SharedKey // binpk =>
@@ -236,7 +239,7 @@ func NewDHT() *DHT {
 	this.SharedKeysRecv = make(map[string]*SharedKey)
 	this.SharedKeysSent = make(map[string]*SharedKey)
 	this.CloseClientList = NewPriorityList(LCLIENT_LIST)
-	this.FriendsList = make(map[string]*DHTFriend)
+	this.FriendsList = NewPriorityList(int(math.MaxInt32))
 	this.ToBootstrap = NewPriorityList(MAX_CLOSE_TO_BOOTSTRAP_NODES) //(MAX_CLOSE_TO_BOOTSTRAP_NODES)
 	this.CryptoPacketHandlers = make(map[uint8]CryptoPacketHandle)
 
@@ -260,7 +263,7 @@ func (this *DHT) start() { go this.doDHT() }
 func (this *DHT) doDHT() {
 	closesttm := time.NewTicker(3 * time.Second)
 	frndtm := time.NewTicker(5 * time.Second)
-	nattm := time.NewTicker(5 * time.Second)
+	nattm := time.NewTicker(6 * time.Second)
 	pingtm := time.NewTicker(PING_INTERVAL * time.Second)
 	doneC := make(chan struct{}, 0)
 	stop := false
@@ -336,7 +339,7 @@ func (this *DHT) doClosest() {
 			}
 		}
 	})
-	log.Println("needs:", len(needGetNodes), "goods:", len(goodNodes), "total:", this.CloseClientList.Len())
+	// log.Println("needs:", len(needGetNodes), "goods:", len(goodNodes), "total:", this.CloseClientList.Len())
 	getidx := rand.Intn(gopp.IfElseInt(len(needGetNodes) == 0, 1, len(needGetNodes)))
 	for i, itemi := range needGetNodes {
 		if i == getidx {
@@ -348,7 +351,7 @@ func (this *DHT) doClosest() {
 	}
 	if len(goodNodes) > 0 && (IsTimeout4Time(nowt, this.CloseLastGetNodes, GET_NODE_INTERVAL) ||
 		this.CloseBootstrapTimes < MAX_BOOTSTRAP_TIMES) {
-		log.Println("Will random getnodes to a closest node:", this.CloseBootstrapTimes)
+		// log.Println("Will random getnodes to a closest node:", this.CloseBootstrapTimes)
 		this.CloseLastGetNodes = nowt
 		this.CloseBootstrapTimes += 1
 		getidx := rand.Int() % len(goodNodes)
@@ -356,11 +359,24 @@ func (this *DHT) doClosest() {
 		this.GetNodes(item.Assoc.Addr, item.Pubkey, this.SelfPubkey)
 		sentOfFakeBS += 1
 	}
-	log.Printf("-------BS:%d, FakeBS: %d, Closest: %d--------\n", sentOfBS, sentOfFakeBS, sentOfClosest)
+	log.Printf("---BS:%d, FakeBS: %d, Closest: %d, need: %d, good: %d, total:%d, ---\n",
+		sentOfBS, sentOfFakeBS, sentOfClosest, len(needGetNodes), len(goodNodes), this.CloseClientList.Len())
 }
 
+/* Ping each client in the "friends" list every PING_INTERVAL seconds. Send a get nodes request
+ * every GET_NODE_INTERVAL seconds to a random good node for each "friend" in our "friends" list.
+ */
 func (this *DHT) doDHTFriends() {
-
+	n := 0
+	this.FriendsList.EachSnap(func(itemi PLItem) {
+		frndo := itemi.(*DHTFriend)
+		frndo.ToBootstrap.EachSnap(func(itemi PLItem) {
+			node := itemi.((*NodeFormat))
+			this.GetNodes(node.Addr, frndo.Pubkey, this.SelfPubkey)
+			n += 1
+		})
+	})
+	log.Println("sent getnodes for friends:", this.FriendsList.Len(), n)
 }
 func (this *DHT) doNAT() {
 
@@ -434,8 +450,9 @@ func (this *DHT) HandleSendNodesIpv6(object interface{}, addr net.Addr, data []b
 		this.CloseClientList.Put(clidat)
 		// log.Println("tobslen:", numNodes, this.ToBootstrap.Len(), "closestlen:", this.CloseClientList.Len())
 
-		for _, dhtfrnd := range this.FriendsList {
-			dhtfrnd.AddNode(nodfmt)
+		this.FriendsList.EachInline(func(itemi PLItem) { itemi.(*DHTFriend).AddNode(nodfmt) })
+		if this.FriendsList.GetByKey(nodekey.BinStr()) != nil {
+			log.Panicln("got friend node:", addro)
 		}
 	}
 	log.Println()
@@ -477,15 +494,16 @@ func (this *DHT) GetNodes(addr net.Addr, pubkey *CryptoKey, client_id *CryptoKey
 	wntlen := 1 + PUBLIC_KEY_SIZE + NONCE_SIZE + plain.Len() + MAC_SIZE
 	gopp.TruePrint(len(pkt) != wntlen, "Invalid pkt,", wntlen, len(pkt))
 
-	go func() {
-		for i := 0; i < 1; i++ {
+	{
+		for i := 0; i < 9; i++ {
 			wn, err := this.Neto.WriteTo(pkt, addr)
 			gopp.ErrPrint(err, wn)
 			// time.Sleep(3 * time.Second)
+			break
 		}
 		// log.Println("send done")
-	}()
-	log.Println("Sent getnodes request:", len(pkt), addr.String(), pingid)
+	}
+	// log.Println("Sent getnodes request:", len(pkt), addr.String(), pingid)
 }
 
 func (this *DHT) Bootstrap(addr net.Addr, pubkey *CryptoKey) error {
@@ -493,13 +511,13 @@ func (this *DHT) Bootstrap(addr net.Addr, pubkey *CryptoKey) error {
 	return nil
 }
 
-func (this *DHT) BootstrapFromAddr(addr string, pubkey *CryptoKey) error {
+func (this *DHT) BootstrapFromAddr(addr string, pubkey string) error {
 	addro, err := net.ResolveUDPAddr("udp", addr)
 	gopp.ErrPrint(err, addr)
 	if err != nil {
 		return err
 	}
-	return this.Bootstrap(addro, pubkey)
+	return this.Bootstrap(addro, NewCryptoKeyFromHex(pubkey))
 }
 
 // pubkey: always current DHT's pubkey?
@@ -517,6 +535,34 @@ func (this *DHT) CreatePacket(pubkey *CryptoKey, shrkey *CryptoKey, ptype uint8,
 	wbuf.Write(encrypted)
 
 	pkt = wbuf.Bytes()
+	return
+}
+
+func (this *DHT) AddFriend(pubkey *CryptoKey, IPCallback func(interface{}, int32, net.Addr),
+	cbdata interface{}, number int32) (LockCount int, err error) {
+	if this.FriendsList.GetByKey(pubkey.BinStr()) != nil {
+		// TODO lock count???
+		return
+	}
+
+	frndo := NewDHTFriend()
+	frndo.Pubkey = pubkey
+	// first, get closest from dht.ClosestClientList, then from other friends. with filter out bad node
+	sltfn := func(itemi PLItem) {
+		item := itemi.(*ClientData)
+		if IsTimeout4Now(item.Assoc.Timestamp, BAD_NODE_TIMEOUT) {
+			return
+		}
+		n := &NodeFormat{Pubkey: item.Pubkey, Addr: item.Assoc.Addr, cmppk: pubkey}
+		frndo.ToBootstrap.Put(n)
+		// TODO is_LAN and want_good and hardening
+	}
+
+	this.CloseClientList.EachInline(sltfn)
+	this.FriendsList.EachInline(func(itemi PLItem) { itemi.(*DHTFriend).ClientList.EachInline(sltfn) })
+
+	//
+	this.FriendsList.Put(frndo)
 	return
 }
 

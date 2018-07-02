@@ -121,9 +121,16 @@ func NewNetworkCore() *NetworkCore {
 
 	laddr := &net.UDPAddr{}
 	laddr.IP = net.ParseIP("0.0.0.0")
-	laddr.Port = 33445 - 100
-	srv, err := net.ListenUDP("udp", laddr)
-	gopp.ErrPrint(err)
+	var srv *net.UDPConn
+	var err error
+	for i := 0; i < 100; i++ {
+		laddr.Port = 33445 - 100 + i
+		srv, err = net.ListenUDP("udp", laddr)
+		gopp.ErrPrint(err)
+		if err == nil {
+			break
+		}
+	}
 	log.Println("Listen on UDP:", srv.LocalAddr().String())
 	this.srv = srv
 
