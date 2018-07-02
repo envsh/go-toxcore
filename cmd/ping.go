@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"gopp"
 	"log"
+	"math/rand"
 	"net"
 	"time"
 )
@@ -41,6 +42,7 @@ func (this *Ping) HandlePingRequest(object interface{}, source net.Addr, packet 
 }
 
 func (this *Ping) HandlePingResponse(object interface{}, source net.Addr, packet []byte, cbdata interface{}) (int, error) {
+	log.Println("ping response from:", source, len(packet))
 	return 0, nil
 }
 
@@ -65,7 +67,33 @@ func (this *Ping) SendPingResponse(source net.Addr, pubkey *CryptoKey, pingid ui
 
 	_, err = this.dhto.Neto.WriteTo(pkt.Bytes(), source)
 	gopp.ErrPrint(err, pingid)
-	log.Println("ping response:", source, pkt.Len())
+	log.Println("ping response to:", source, pkt.Len())
+}
+
+func (this *Ping) SendPingRequest(addr net.Addr, pubkey *CryptoKey) {
+	if pubkey.Equal(this.dhto.SelfPubkey.Bytes()) {
+		log.Println("to self ping????")
+		return
+	}
+	plnpkt := gopp.NewBufferZero()
+	plnpkt.WriteByte(byte(NET_PACKET_PING_REQUEST))
+	pingid := rand.Uint64()
+	gopp.CmpAndSwapN(&pingid, 0, 1)
+	binary.Write(plnpkt, binary.BigEndian, pingid)
+
+	nonce := CBRandomNonce()
+	shrkey := this.dhto.GetSharedKeySent(pubkey)
+	encpkt, err := EncryptDataSymmetric(shrkey, nonce, plnpkt.Bytes())
+	gopp.ErrPrint(err)
+
+	pingpkt := gopp.NewBufferZero()
+	pingpkt.WriteByte(byte(NET_PACKET_PING_REQUEST))
+	pingpkt.Write(this.dhto.SelfPubkey.Bytes())
+	pingpkt.Write(nonce.Bytes())
+	pingpkt.Write(encpkt)
+
+	_, err = this.dhto.Neto.WriteTo(pingpkt.Bytes(), addr)
+	gopp.ErrPrint(err)
 }
 
 /////

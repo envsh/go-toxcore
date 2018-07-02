@@ -94,3 +94,5 @@ func NewCBNonce(nonce []byte) *CBNonce {
 	cbsupport.CheckSize(nonce, cryptobox.CryptoBoxNonceBytes(), "Invalid nonce size")
 	return &CBNonce{nonce, (*_CBNonce)(unsafe.Pointer(&nonce[0]))}
 }
+
+func CBRandomBytes(n int) []byte { return randombytes.RandomBytes(n) }

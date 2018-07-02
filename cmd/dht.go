@@ -139,7 +139,9 @@ type NodeFormat struct {
 
 func (this *NodeFormat) Key() string { return this.Pubkey.BinStr() }
 func (this *NodeFormat) Compare(that PLItem) int {
-	return IDClosest(this.cmppk, this.Pubkey, that.(*NodeFormat).Pubkey)
+	v := IDClosest(this.cmppk, this.Pubkey, that.(*NodeFormat).Pubkey)
+	// log.Println(v, this.cmppk.ToHex()[:20], this.Pubkey.ToHex()[:20], that.(*NodeFormat).Pubkey.ToHex()[:20])
+	return v
 }
 func (this *NodeFormat) Update(thati PLItem) {}
 
@@ -181,8 +183,15 @@ func NewDHTFriend() *DHTFriend {
 }
 
 func (this *DHTFriend) AddNode(n *NodeFormat) {
-	this.ClientList.Put(n)
-	this.ToBootstrap.Put(n)
+	if n.cmppk.BinStr() != this.cmppk.BinStr() {
+		n = &*n
+		n.cmppk = this.cmppk
+		this.ClientList.Put(n)
+		this.ToBootstrap.Put(n)
+	} else {
+		this.ClientList.Put(n)
+		this.ToBootstrap.Put(n)
+	}
 }
 
 // name to SharedKeyInfo???
@@ -367,16 +376,60 @@ func (this *DHT) doClosest() {
  * every GET_NODE_INTERVAL seconds to a random good node for each "friend" in our "friends" list.
  */
 func (this *DHT) doDHTFriends() {
+	// TODO check GET_NODE_INTERVAL
 	n := 0
+	frndid := ""
 	this.FriendsList.EachSnap(func(itemi PLItem) {
 		frndo := itemi.(*DHTFriend)
 		frndo.ToBootstrap.EachSnap(func(itemi PLItem) {
-			node := itemi.((*NodeFormat))
-			this.GetNodes(node.Addr, frndo.Pubkey, this.SelfPubkey)
+			node := itemi.(*NodeFormat)
+			this.GetNodes(node.Addr, node.Pubkey, frndo.Pubkey)
+			n += 1
+			if n == 1 {
+				frndid = frndo.Pubkey.ToHex()[:20]
+			}
+		})
+		frndo.ClientList.EachSnap(func(itemi PLItem) {
+			clidat := itemi.(*NodeFormat)
+			this.GetNodes(clidat.Addr, clidat.Pubkey, frndo.Pubkey)
 			n += 1
 		})
+
+		frndSeen := false // some where,
+		frndAddr := ""
+		frndo.ClientList.EachSnap(func(itemi PLItem) {
+			if itemi.(*NodeFormat).Key() == frndo.Key() {
+				frndSeen = true
+				frndAddr = itemi.(*NodeFormat).Addr.String()
+				log.Println("seen from frndo.ClientList:", frndo.Pubkey.ToHex()[:20])
+				return
+			}
+		})
+		frndo.ToBootstrap.EachSnap(func(itemi PLItem) {
+			if itemi.(*NodeFormat).Key() == frndo.Key() {
+				// frndSeen = true
+				log.Println("seen from frndo.ToBootstrap:", frndo.Pubkey.ToHex()[:20])
+				return
+			}
+		})
+		this.CloseClientList.EachSnap(func(itemi PLItem) {
+			if itemi.(*ClientData).Key() == frndo.Key() {
+				// frndSeen = true
+				log.Println("seen from dht.ClientList:", frndo.Pubkey.ToHex()[:20])
+				return
+			}
+		})
+		log.Println("frndSeen:", frndSeen, frndAddr, frndo.Pubkey.ToHex()[:20])
+		if !frndSeen {
+			slts := this.CloseClientList.SelectRandn(48)
+			for _, itemi := range slts {
+				clidat := itemi.(*ClientData)
+				this.GetNodes(clidat.Assoc.Addr, clidat.Pubkey, frndo.Pubkey)
+				n += 1
+			}
+		}
 	})
-	log.Println("sent getnodes for friends:", this.FriendsList.Len(), n)
+	log.Println("sent getnodes for friends:", this.FriendsList.Len(), n, frndid)
 }
 func (this *DHT) doNAT() {
 
@@ -451,11 +504,7 @@ func (this *DHT) HandleSendNodesIpv6(object interface{}, addr net.Addr, data []b
 		// log.Println("tobslen:", numNodes, this.ToBootstrap.Len(), "closestlen:", this.CloseClientList.Len())
 
 		this.FriendsList.EachInline(func(itemi PLItem) { itemi.(*DHTFriend).AddNode(nodfmt) })
-		if this.FriendsList.GetByKey(nodekey.BinStr()) != nil {
-			log.Panicln("got friend node:", addro)
-		}
 	}
-	log.Println()
 
 	return 0, nil
 }
@@ -547,6 +596,7 @@ func (this *DHT) AddFriend(pubkey *CryptoKey, IPCallback func(interface{}, int32
 
 	frndo := NewDHTFriend()
 	frndo.Pubkey = pubkey
+	frndo.cmppk = pubkey
 	// first, get closest from dht.ClosestClientList, then from other friends. with filter out bad node
 	sltfn := func(itemi PLItem) {
 		item := itemi.(*ClientData)
@@ -602,13 +652,13 @@ func IDClosest(pk *CryptoKey, pk1 *CryptoKey, pk2 *CryptoKey) int {
 		distance2 := pkb[i] ^ pk2b[i]
 
 		if distance1 < distance2 {
-			return 1
+			return 0
 		}
 		if distance1 > distance2 {
-			return -1 // 2
+			return -1
 		}
 	}
-	return 0
+	return 1
 }
 
 // need?

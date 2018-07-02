@@ -43,16 +43,20 @@ func run_server() {
 
 	dht := NewDHT()
 	dht.SetKeyPair(self_pubkey, self_seckey)
+	dht.AddFriend(NewCryptoKeyFromHex(echo_cli_pubkey_str), nil, nil, 0)
 	dht.BootstrapFromAddr(bs_addr, bs_pubkey_str)
 }
 
+var echo_cli_pubkey_str = "6C98FA6F2FE3EA1ECE629D9B4AA13BF40043B7B7E9ADF1A2D0F1C4D617191D34"
+
 func run_client() {
-	pubkey := "6C98FA6F2FE3EA1ECE629D9B4AA13BF40043B7B7E9ADF1A2D0F1C4D617191D34"
+	pubkey := echo_cli_pubkey_str
 	seckey := "E58BE72DEF39824661CF1212F22C77A0D4CC055F43610C75EDC8CAB860A54E9D"
 
 	cliapi := NewDHTApi(pubkey, seckey)
 	cliapi.BootstrapFromAddr(bs_addr, bs_pubkey_str)
 	cliapi.AddFriend(echo_serv_pubkey_str)
+	// cliapi.AddFriend("C365730A9329EB8162CE841256D2FEE533728C026A8FB6DADFD3A84538819403")
 
 	for {
 		time.Sleep(5 * time.Second)

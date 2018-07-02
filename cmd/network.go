@@ -157,7 +157,11 @@ func (this *NetworkCore) doPoll(cbdata interface{}) {
 		// dispatch
 		rdbuf = rdbuf[:rn]
 		pktname := netpktname(rdbuf[0])
-		log.Println("recv UDP pkt:", rn, raddr.String(), pktname)
+		switch int(rdbuf[0]) {
+		case NET_PACKET_SEND_NODES_IPV6:
+		default:
+			log.Println("recv UDP pkt:", rn, raddr.String(), pktname)
+		}
 		h, ok := this.PacketHandlers[rdbuf[0]]
 		if !ok || h.Func == nil {
 			log.Println("Packet has no handler:", pktname)

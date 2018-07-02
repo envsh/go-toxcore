@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"math/rand"
 	"sync"
 )
 
@@ -44,14 +45,15 @@ func (this *PriorityList) Put(item PLItem) bool {
 	// find insert position
 	var i int = 0
 	for ; i < len(this.lst); i++ {
-		if i == len(this.lst)-1 {
-			break
-		}
+		// cmppk, item, lsti
 		v := item.Compare(this.lst[i])
-		if v > 0 {
+		// log.Println(i, v, hex.EncodeToString([]byte(item.Key()))[:20],
+		//	hex.EncodeToString([]byte(this.lst[i].Key()))[:20])
+		if v >= 0 {
 			break
 		}
 	}
+	// log.Println(i, hex.EncodeToString([]byte(item.Key()))[:20])
 
 	this.lst = append(this.lst[:i], append([]PLItem{item}, this.lst[i:]...)...)
 	this.keys[item.Key()] = item
@@ -182,6 +184,33 @@ func (this *PriorityList) Select(f func(itemi PLItem) bool) (slts []PLItem) {
 			slts = append(slts, item)
 		}
 	}
+	return
+}
+
+func (this *PriorityList) SelectRandn(k int) (slts []PLItem) {
+	if k <= 0 {
+		return
+	}
+
+	this.mu.RLock()
+	defer this.mu.RUnlock()
+
+	n := len(this.lst)
+
+	for i := 0; i < k && i < n; i++ {
+		slts = append(slts, this.lst[i])
+	}
+	if len(slts) < k {
+		return // not enough
+	}
+
+	for x, itemi := range this.lst[k:] {
+		j := rand.Intn(x + k)
+		if j < k {
+			slts[j] = itemi
+		}
+	}
+
 	return
 }
 

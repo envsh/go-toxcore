@@ -64,8 +64,8 @@ func (this *DHTApi) sendPacketToFriend(pubkey *CryptoKey, pkt []byte) {
 			if itemi2 == nil {
 				log.Println("can not find friend info", pubkey.ToHex()[:20])
 			} else {
-				clidat := itemi2.(*ClientData)
-				log.Println("find friend:", clidat.Assoc.Addr, pubkey.ToHex()[:20])
+				clidat := itemi2.(*NodeFormat)
+				log.Println("find friend:", clidat.Addr, pubkey.ToHex()[:20])
 			}
 		}
 	}
@@ -76,13 +76,18 @@ func (this *DHTApi) sendPacketToFriend(pubkey *CryptoKey, pkt []byte) {
 		}
 	}
 
+	ipo := net.ParseIP("10.0.0.32")
+	addr := &net.UDPAddr{}
+	addr.IP = ipo
+	addr.Port = 33345
+
 	if false {
-		ipo := net.ParseIP("10.0.0.32")
-		addr := &net.UDPAddr{}
-		addr.IP = ipo
-		addr.Port = 33345
 		wn, err := this.dhto.Neto.WriteTo(pkt, addr)
 		gopp.ErrPrint(err, wn, addr)
+	}
+
+	if false {
+		this.dhto.Pingo.SendPingRequest(addr, pubkey)
 	}
 }
 
