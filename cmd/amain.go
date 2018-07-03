@@ -41,10 +41,15 @@ func run_server() {
 	log.Println(mode, "pubkey:", self_pubkey.ToHex())
 	log.Println(mode, "seckey:", self_seckey.ToHex())
 
-	dht := NewDHT()
-	dht.SetKeyPair(self_pubkey, self_seckey)
-	dht.AddFriend(NewCryptoKeyFromHex(echo_cli_pubkey_str), nil, nil, 0)
-	dht.BootstrapFromAddr(bs_addr, bs_pubkey_str)
+	apio := NewDHTApi(self_pubkey.ToHex(), self_seckey.ToHex())
+	apio.AddFriend(echo_cli_pubkey_str)
+	apio.BootstrapFromAddr(bs_addr, bs_pubkey_str)
+	/*
+		dht := NewDHT()
+		dht.SetKeyPair(self_pubkey, self_seckey)
+		dht.AddFriend(NewCryptoKeyFromHex(echo_cli_pubkey_str), nil, nil, 0)
+		dht.BootstrapFromAddr(bs_addr, bs_pubkey_str)
+	*/
 }
 
 var echo_cli_pubkey_str = "6C98FA6F2FE3EA1ECE629D9B4AA13BF40043B7B7E9ADF1A2D0F1C4D617191D34"

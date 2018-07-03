@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/GoKillers/libsodium-go/cryptobox"
+	"github.com/pkg/errors"
 )
 
 type ClientHandshake struct {
@@ -227,6 +228,7 @@ func EncryptDataSymmetric(seckey *CryptoKey, nonce *CBNonce, plain []byte) (encr
 
 	encrypted, err = CBAfterNm(seckey, nonce, temp_plain)
 	if err != nil {
+		err = errors.Wrap(err, "")
 		return
 	}
 
@@ -245,5 +247,8 @@ func DecryptDataSymmetric(seckey *CryptoKey, nonce *CBNonce, encrypted []byte) (
 	plain = plain[cryptobox.CryptoBoxZeroBytes():]
 	gopp.Assert(len(plain) == len(encrypted)-cryptobox.CryptoBoxMacBytes(),
 		"size error:", len(plain), len(encrypted))
+	if err != nil {
+		err = errors.Wrap(err, "")
+	}
 	return
 }

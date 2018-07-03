@@ -397,29 +397,33 @@ func (this *DHT) doDHTFriends() {
 
 		frndSeen := false // some where,
 		frndAddr := ""
+		frndSeenAt := []string{}
 		frndo.ClientList.EachSnap(func(itemi PLItem) {
 			if itemi.(*NodeFormat).Key() == frndo.Key() {
 				frndSeen = true
 				frndAddr = itemi.(*NodeFormat).Addr.String()
-				log.Println("seen from frndo.ClientList:", frndo.Pubkey.ToHex()[:20])
+				// log.Println("seen from frndo.ClientList:", frndo.Pubkey.ToHex()[:20])
+				frndSeenAt = append(frndSeenAt, "frndo.ClientList")
 				return
 			}
 		})
 		frndo.ToBootstrap.EachSnap(func(itemi PLItem) {
 			if itemi.(*NodeFormat).Key() == frndo.Key() {
 				// frndSeen = true
-				log.Println("seen from frndo.ToBootstrap:", frndo.Pubkey.ToHex()[:20])
+				// log.Println("seen from frndo.ToBootstrap:", frndo.Pubkey.ToHex()[:20])
+				frndSeenAt = append(frndSeenAt, "frndo.ToBootstrap")
 				return
 			}
 		})
 		this.CloseClientList.EachSnap(func(itemi PLItem) {
 			if itemi.(*ClientData).Key() == frndo.Key() {
 				// frndSeen = true
-				log.Println("seen from dht.ClientList:", frndo.Pubkey.ToHex()[:20])
+				// log.Println("seen from dht.ClientList:", frndo.Pubkey.ToHex()[:20])
+				frndSeenAt = append(frndSeenAt, "dht.ClientList")
 				return
 			}
 		})
-		log.Println("frndSeen:", frndSeen, frndAddr, frndo.Pubkey.ToHex()[:20])
+		log.Println("frndSeen:", frndSeen, frndAddr, frndSeenAt, frndo.Pubkey.ToHex()[:20])
 		if !frndSeen {
 			slts := this.CloseClientList.SelectRandn(48)
 			for _, itemi := range slts {
@@ -584,6 +588,15 @@ func (this *DHT) CreatePacket(pubkey *CryptoKey, shrkey *CryptoKey, ptype uint8,
 	wbuf.Write(encrypted)
 
 	pkt = wbuf.Bytes()
+	return
+}
+
+func (this *DHT) Unpacket(encpkt []byte) (ptype byte, pubkey *CryptoKey, nonce *CBNonce, plain []byte, err error) {
+	ptype = encpkt[0]
+	pubkey = NewCryptoKey(encpkt[1 : 1+PUBLIC_KEY_SIZE])
+	nonce = NewCBNonce(encpkt[1+PUBLIC_KEY_SIZE : 1+PUBLIC_KEY_SIZE+NONCE_SIZE])
+	shrkey := this.GetSharedKeySent(pubkey)
+	plain, err = DecryptDataSymmetric(shrkey, nonce, encpkt[1+PUBLIC_KEY_SIZE+NONCE_SIZE:])
 	return
 }
 
