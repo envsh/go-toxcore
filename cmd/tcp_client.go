@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"gopp"
@@ -58,17 +59,18 @@ type TCPClient struct {
 
 	ping_id     uint64
 	last_packet []byte
+
+	conn  net.Conn
+	conns *BiMap // connid uint8 <=> pkbinstr
 }
 
-func NewTCPClient() *TCPClient {
+func NewTCPClient(serv_addr string, serv_pubkey string) *TCPClient {
 	this := &TCPClient{}
 
 	var err error
 	//
-	serv_pubkey_str := "0FB96EEBFB1650DDB52E70CF773DDFCABE25A95CC3BB50FC251082E4B63EF82A"
-	this.serv_addr = "104.223.122.15:33445"
-	// self_pubkey_str := "ABB96EEBFB1650DDB52E70CF773DDFCABE25A95CC3BB50FC251082E4B63EF82A"
-	// self_privkey_str := "CDB96EEBFB1650DDB52E70CF773DDFCABE25A95CC3BB50FC251082E4B63EF82A"
+	serv_pubkey_str := serv_pubkey
+	this.serv_addr = serv_addr
 	this.serv_pubkey = NewCryptoKeyFromHex(serv_pubkey_str)
 	// log.Println(len(serv_pubkey_str), this.serv_pubkey.Len(), this.serv_pubkey.ToHex() == serv_pubkey_str)
 	// this.serv_pubkey, this.serv_seckey, err = NewCBKeyPair()
@@ -78,7 +80,17 @@ func NewTCPClient() *TCPClient {
 	this.shrkey, err = CBBeforeNm(this.serv_pubkey, this.self_seckey)
 	gopp.ErrPrint(err)
 
+	this.conns = NewBiMap()
+
 	return this
+}
+
+func (this *TCPClient) SetKeyPair(pubkey, seckey string) {
+	this.self_pubkey = NewCryptoKeyFromHex(pubkey)
+	this.self_seckey = NewCryptoKeyFromHex(seckey)
+	var err error
+	this.shrkey, err = CBBeforeNm(this.serv_pubkey, this.self_seckey)
+	gopp.ErrPrint(err)
 }
 
 func (this *TCPClient) DoHandshake() {
@@ -105,29 +117,38 @@ func (this *TCPClient) DoHandshake() {
 	rdbuf = rdbuf[:rn]
 	this.HandleHandshake(rdbuf)
 
+	// ping
 	ping_pkt := this.MakePingPacket()
 	wn, err = c.Write(ping_pkt)
 	gopp.ErrPrint(err, wn)
+	this.sent_nonce.Incr()
 
 	rdbuf = make([]byte, 300)
 	rn, err = c.Read(rdbuf)
 	gopp.ErrPrint(err, rn)
 	rdbuf = rdbuf[:rn]
 	gopp.NilPrint(err, "recv pong packet success", rn)
-	this.HandlePing(rdbuf)
-
-	go func() {
-		rdbuf = make([]byte, 300)
-		rn, err = c.Read(rdbuf)
-		gopp.ErrPrint(err, rn)
-		rdbuf = rdbuf[:rn]
-	}()
+	this.HandlePingResponse(rdbuf)
+	this.conn = c
 
 	//
 	log.Println("waiting...")
-	select {}
+	// select {}
 }
-
+func (this *TCPClient) StartRead() {
+	go func() {
+		for {
+			c := this.conn
+			log.Println("async reading...")
+			rdbuf := make([]byte, 300)
+			rn, err := c.Read(rdbuf)
+			gopp.ErrPrint(err, rn)
+			rdbuf = rdbuf[:rn]
+			datlen, plnpkt, err := this.Unpacket(rdbuf)
+			log.Println("read data pkt:", len(rdbuf), datlen, plnpkt[0], tcppktname(plnpkt[0]))
+		}
+	}()
+}
 func (this *TCPClient) GenerateHandshake() {
 	var err error
 	var temp_pubkey *CryptoKey
@@ -204,8 +225,8 @@ func (this *TCPClient) MakePingPacket() []byte {
 	return ping_pkt.Bytes()
 }
 
-func (this *TCPClient) HandlePing(rdbuf []byte) {
-	pong_plain, err := DecryptDataSymmetric(this.shrkey, this.recv_nonce, rdbuf[2:])
+func (this *TCPClient) HandlePingResponse(rpkt []byte) {
+	pong_plain, err := DecryptDataSymmetric(this.shrkey, this.recv_nonce, rpkt[2:])
 	gopp.ErrPrint(err)
 	gopp.NilPrint(err, "decrypt pong packet success", len(pong_plain))
 
@@ -219,6 +240,90 @@ func (this *TCPClient) HandlePing(rdbuf []byte) {
 	log.Println(pong_id == ping_id, pong_id, ping_id)
 	atomic.CompareAndSwapUint64(&this.ping_id, pong_id, 0)
 	log.Println("handshake 2 done. confirmed.")
+	this.recv_nonce.Incr()
+}
+
+func (this *TCPClient) ConnectPeer(pubkey string) {
+	c := this.conn
+
+	// routing request
+	// encpkt, err := this.SendRoutingRequest(NewCryptoKeyFromHex(echo_serv_pubkey_str))
+	encpkt, err := this.SendRoutingRequest(NewCryptoKeyFromHex(pubkey))
+	gopp.ErrPrint(err)
+	wn, err := c.Write(encpkt)
+	gopp.ErrPrint(err, wn)
+	this.sent_nonce.Incr()
+	rdbuf := make([]byte, 300)
+	rn, err := c.Read(rdbuf)
+	gopp.ErrPrint(err, rn)
+	rdbuf = rdbuf[:rn]
+	gopp.NilPrint(err, "recv routing response packet success", rn)
+	this.HandleRoutingResponse(rdbuf)
+}
+
+func (this *TCPClient) SendRoutingRequest(pubkey *CryptoKey) (encpkt []byte, err error) {
+	buf := gopp.NewBufferZero()
+	buf.WriteByte(byte(TCP_PACKET_ROUTING_REQUEST))
+	buf.Write(pubkey.Bytes())
+
+	encpkt, err = this.CreatePacket(buf.Bytes())
+	return
+}
+
+func (this *TCPClient) HandleRoutingResponse(rpkt []byte) {
+	var datlen uint16
+	err := binary.Read(bytes.NewBuffer(rpkt), binary.BigEndian, &datlen)
+	gopp.ErrPrint(err)
+	rspdat, err := DecryptDataSymmetric(this.shrkey, this.recv_nonce, rpkt[2:])
+	gopp.ErrPrint(err)
+	gopp.Assert(rspdat[0] == TCP_PACKET_ROUTING_RESPONSE, "Invalid packet", rspdat[0])
+	connid := rspdat[1]
+	pubkey := NewCryptoKey(rspdat[2 : 2+PUBLIC_KEY_SIZE])
+	log.Println(rspdat[0], connid, pubkey.ToHex()[:20], "<=", this.self_pubkey.ToHex()[:20])
+	this.recv_nonce.Incr()
+
+	this.conns.Insert(connid, pubkey.BinStr())
+}
+
+func (this *TCPClient) SendDataPacket(pubkey *CryptoKey, data []byte) (encpkt []byte, err error) {
+	var connid uint8
+	buf := gopp.NewBufferZero()
+	buf.WriteByte(byte(connid))
+	buf.Write(data)
+
+	encpkt, err = this.CreatePacket(buf.Bytes())
+	return
+}
+
+func (this *TCPClient) SendOOBPacket(pubkey *CryptoKey, data []byte) (encpkt []byte, err error) {
+	buf := gopp.NewBufferZero()
+	buf.WriteByte(byte(TCP_PACKET_OOB_SEND))
+	buf.Write(pubkey.Bytes())
+	buf.Write(data)
+
+	encpkt, err = this.CreatePacket(buf.Bytes())
+	return
+}
+
+// tcp packet
+func (this *TCPClient) CreatePacket(plain []byte) (encpkt []byte, err error) {
+	log.Println(len(plain), this.shrkey.ToHex()[:20], this.sent_nonce.ToHex())
+	encdat, err := EncryptDataSymmetric(this.shrkey, this.sent_nonce, plain)
+	gopp.ErrPrint(err)
+
+	pktbuf := gopp.NewBufferZero()
+	binary.Write(pktbuf, binary.BigEndian, uint16(len(encdat)))
+	pktbuf.Write(encdat)
+	encpkt = pktbuf.Bytes()
+	log.Println(len(encpkt), len(plain))
+	return
+}
+
+func (this *TCPClient) Unpacket(encpkt []byte) (datlen uint16, plnpkt []byte, err error) {
+	err = binary.Read(bytes.NewReader(encpkt), binary.BigEndian, &datlen)
+	gopp.ErrPrint(err)
+	plnpkt, err = DecryptDataSymmetric(this.shrkey, this.recv_nonce, encpkt[2:])
+	return
 }
 
 func EncryptDataSymmetric(seckey *CryptoKey, nonce *CBNonce, plain []byte) (encrypted []byte, err error) {

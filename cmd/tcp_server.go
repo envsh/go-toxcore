@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 const MAX_INCOMING_CONNECTIONS = 256
 
 const TCP_MAX_BACKLOG = MAX_INCOMING_CONNECTIONS
@@ -30,3 +32,29 @@ const ARRAY_ENTRY_SIZE = 6
 /* frequency to ping connected nodes and timeout in seconds */
 const TCP_PING_FREQUENCY = 30
 const TCP_PING_TIMEOUT = 10
+
+var tcppktnames = map[byte]string{
+	TCP_PACKET_ROUTING_REQUEST:         "ROUTING_REQUEST",
+	TCP_PACKET_ROUTING_RESPONSE:        "ROUTING_RESPONSE",
+	TCP_PACKET_CONNECTION_NOTIFICATION: "CONNECTION_NOTIFICATION",
+	TCP_PACKET_DISCONNECT_NOTIFICATION: "DISCONNECT_NOTIFICATION",
+	TCP_PACKET_PING:                    "PING",
+	TCP_PACKET_PONG:                    "PONG",
+	TCP_PACKET_OOB_SEND:                "OOB_SEND",
+	TCP_PACKET_OOB_RECV:                "OOB_RECV",
+	TCP_PACKET_ONION_REQUEST:           "ONION_REQUEST",
+	TCP_PACKET_ONION_RESPONSE:          "ONION_RESPONSE",
+}
+
+func tcppktname(ptype byte) string {
+	name := "TCP_PACKET_INVALID"
+	if ptype > TCP_PACKET_ONION_RESPONSE && ptype < NUM_RESERVED_PORTS {
+	} else if ptype >= NUM_RESERVED_PORTS {
+		name = fmt.Sprintf("DATA_FOR_CONNID_%d", ptype)
+	} else {
+		name = tcppktnames[ptype]
+	}
+	return name
+}
+
+/////////

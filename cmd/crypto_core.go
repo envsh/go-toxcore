@@ -1,5 +1,11 @@
 package main
 
+/*
+#cgo LDFLAGS: -lsodium
+
+#include <sodium.h>
+*/
+import "C"
 import (
 	"bytes"
 	"encoding/hex"
@@ -93,6 +99,21 @@ func CBRandomNonce() *CBNonce {
 func NewCBNonce(nonce []byte) *CBNonce {
 	cbsupport.CheckSize(nonce, cryptobox.CryptoBoxNonceBytes(), "Invalid nonce size")
 	return &CBNonce{nonce, (*_CBNonce)(unsafe.Pointer(&nonce[0]))}
+}
+func (this *CBNonce) Incr() {
+	gopp.BytesReverse(this.byteArray)
+	p := (*C.uint8_t)(unsafe.Pointer(&this.byteArray[0]))
+	C.sodium_increment(p, C.size_t(len(this.byteArray)))
+	gopp.BytesReverse(this.byteArray)
+}
+
+func (this *CBNonce) Incrn(n int) {
+	gopp.BytesReverse(this.byteArray)
+	p := (*C.uint8_t)(unsafe.Pointer(&this.byteArray[0]))
+	for i := 0; i < n; i++ {
+		C.sodium_increment(p, C.size_t(len(this.byteArray)))
+	}
+	gopp.BytesReverse(this.byteArray)
 }
 
 func CBRandomBytes(n int) []byte { return randombytes.RandomBytes(n) }
