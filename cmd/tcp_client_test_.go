@@ -1,24 +1,33 @@
 package main
 
-import "log"
+import (
+	"gopp"
+	"log"
+	"time"
+)
 
 var c *TCPClient
 
 func test_tcp_client() {
 	bsaddr, bspubkey := bsnodes[0], bsnodes[1]
 	if mode == "srv" {
-		c = NewTCPClient(bsaddr, bspubkey)
-		c.SetKeyPair(echo_serv_pubkey_str, echo_serv_seckey_str)
-		c.DoHandshake()
-		c.ConnectPeer(echo_cli_pubkey_str)
-		c.StartRead()
+		c = NewTCPClientRaw(bsaddr, bspubkey, echo_serv_pubkey_str, echo_serv_seckey_str)
+		c.OnConfirmed = func() { c.ConnectPeer(echo_cli_pubkey_str) }
 		log.Println(&c)
 	} else {
-		c = NewTCPClient(bsaddr, bspubkey)
-		c.SetKeyPair(echo_cli_pubkey_str, echo_cli_seckey_str)
-		c.DoHandshake()
-		c.ConnectPeer(echo_serv_pubkey_str)
-		c.StartRead()
+		c = NewTCPClientRaw(bsaddr, bspubkey, echo_cli_pubkey_str, echo_cli_seckey_str)
+		c.OnConfirmed = func() { c.ConnectPeer(echo_serv_pubkey_str) }
+
+		c.RoutingStatusFunc = func(object Object, number uint32, connection_id uint8, status uint8) {
+			go func() {
+				data := []byte(gopp.RandomStringPrintable(123))
+				for i := 0; i < 100; i++ {
+					time.Sleep(5 * time.Second)
+					c.SendDataPacket(connection_id, data)
+					break
+				}
+			}()
+		}
 		log.Println(&c)
 	}
 }
