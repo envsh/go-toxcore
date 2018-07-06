@@ -228,6 +228,18 @@ func ConferenceGetIdentifier_s(t *tox.Tox, groupNumber uint32) (groupId string, 
 }
 
 func ConferenceGetByIdentifier(t *tox.Tox, identifier string) (groupNumber uint32, found bool) {
+	nums := t.ConferenceGetChatlist()
+	for _, num := range nums {
+		groupId, err := t.ConferenceGetIdentifier(num)
+		gopp.ErrFatal(err)
+		if groupId == identifier {
+			groupNumber, found = num, true
+			break
+		}
+	}
+	return
+}
+func ConferenceGetByIdentifier_dep(t *tox.Tox, identifier string) (groupNumber uint32, found bool) {
 	ctxmu.Lock()
 	defer ctxmu.Unlock()
 

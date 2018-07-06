@@ -3,6 +3,7 @@ package main
 /*
 #cgo LDFLAGS: -lsodium
 
+#include <stdint.h>
 #include <sodium.h>
 */
 import "C"
@@ -17,6 +18,7 @@ import (
 	"github.com/GoKillers/libsodium-go/cryptobox"
 	"github.com/GoKillers/libsodium-go/randombytes"
 	cbsupport "github.com/GoKillers/libsodium-go/support"
+	"github.com/pkg/errors"
 )
 
 const PUBLIC_KEY_SIZE = 32
@@ -62,6 +64,8 @@ func NewCBKeyPair() (pk *CryptoKey, sk *CryptoKey, err error) {
 	seckey, pubkey, iret := cryptobox.CryptoBoxKeyPair()
 	return NewCryptoKey(pubkey), NewCryptoKey(seckey), cbiret2err(iret)
 }
+
+func (this *CryptoKey) Dup() *CryptoKey { return NewCryptoKey(this.Bytes()) }
 
 func cbiret2err(iret int) error {
 	if iret != 0 {
@@ -117,3 +121,44 @@ func (this *CBNonce) Incrn(n int) {
 }
 
 func CBRandomBytes(n int) []byte { return randombytes.RandomBytes(n) }
+
+func CBDerivePubkey(seckey *CryptoKey) (pubkey *CryptoKey) {
+	buf := randombytes.RandomBytes(cryptobox.CryptoBoxPublicKeyBytes())
+	C.crypto_scalarmult_curve25519_base((*C.uint8_t)(unsafe.Pointer(&buf[0])),
+		(*C.uint8_t)(unsafe.Pointer(&seckey.byteArray[0])))
+	pubkey = NewCryptoKey(buf)
+	return
+}
+
+/////
+func EncryptDataSymmetric(seckey *CryptoKey, nonce *CBNonce, plain []byte) (encrypted []byte, err error) {
+	temp_plain := make([]byte, len(plain)+cryptobox.CryptoBoxZeroBytes())
+	n := copy(temp_plain[cryptobox.CryptoBoxZeroBytes():], plain)
+	gopp.Assert(n == len(plain), "copy error", n, len(plain))
+
+	encrypted, err = CBAfterNm(seckey, nonce, temp_plain)
+	if err != nil {
+		err = errors.Wrap(err, "")
+		return
+	}
+
+	encrypted = encrypted[cryptobox.CryptoBoxBoxZeroBytes():]
+	gopp.Assert(len(encrypted) == len(plain)+cryptobox.CryptoBoxMacBytes(),
+		"size error:", len(encrypted), len(plain))
+	return
+}
+
+func DecryptDataSymmetric(seckey *CryptoKey, nonce *CBNonce, encrypted []byte) (plain []byte, err error) {
+	temp_encrypted := make([]byte, len(encrypted)+cryptobox.CryptoBoxBoxZeroBytes())
+	copy(temp_encrypted[cryptobox.CryptoBoxBoxZeroBytes():], encrypted)
+
+	plain, err = CBOpenAfterNm(seckey, nonce, temp_encrypted)
+	gopp.ErrPrint(err, len(plain), len(encrypted))
+	plain = plain[cryptobox.CryptoBoxZeroBytes():]
+	gopp.Assert(len(plain) == len(encrypted)-cryptobox.CryptoBoxMacBytes(),
+		"size error:", len(plain), len(encrypted))
+	if err != nil {
+		err = errors.Wrap(err, "")
+	}
+	return
+}

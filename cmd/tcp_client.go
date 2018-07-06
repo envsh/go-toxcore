@@ -10,10 +10,9 @@ import (
 	"math/rand"
 	"net"
 	"sync/atomic"
-
-	"github.com/GoKillers/libsodium-go/cryptobox"
-	"github.com/pkg/errors"
 )
+
+const TCP_CONNECTION_TIMEOUT = 10
 
 type ClientHandshake struct {
 	SelfPubkey *CryptoKey
@@ -43,22 +42,22 @@ func ServerHandshakeFrom(encpkt []byte, shrkey *CryptoKey) *ServerHandshake {
 }
 
 type TCPClient struct {
-	serv_addr string
-	serv_conn net.Conn
+	ServAddr string
+	ServConn net.Conn
 
-	self_pubkey *CryptoKey
-	self_seckey *CryptoKey
-	serv_pubkey *CryptoKey
-	serv_seckey *CryptoKey // for test
-	shrkey      *CryptoKey // combined key
+	SelfPubkey *CryptoKey
+	SelfSeckey *CryptoKey
+	ServPubkey *CryptoKey
+	ServSeckey *CryptoKey // for test
+	Shrkey     *CryptoKey // combined key
 	// temp_pubkey *CryptoKey
-	temp_seckey *CryptoKey
-	sent_nonce  *CBNonce
-	recv_nonce  *CBNonce
-	temp_nonce  *CBNonce
+	TempSeckey *CryptoKey
+	SentNonce  *CBNonce
+	RecvNonce  *CBNonce
+	TempNonce  *CBNonce
 
-	ping_id     uint64
-	last_packet []byte
+	Pingid     uint64
+	LastPacket []byte
 
 	conn  net.Conn
 	conns *BiMap // connid uint8 <=> pkbinstr
@@ -70,14 +69,14 @@ func NewTCPClient(serv_addr string, serv_pubkey string) *TCPClient {
 	var err error
 	//
 	serv_pubkey_str := serv_pubkey
-	this.serv_addr = serv_addr
-	this.serv_pubkey = NewCryptoKeyFromHex(serv_pubkey_str)
+	this.ServAddr = serv_addr
+	this.ServPubkey = NewCryptoKeyFromHex(serv_pubkey_str)
 	// log.Println(len(serv_pubkey_str), this.serv_pubkey.Len(), this.serv_pubkey.ToHex() == serv_pubkey_str)
 	// this.serv_pubkey, this.serv_seckey, err = NewCBKeyPair()
-	this.self_pubkey, this.self_seckey, err = NewCBKeyPair()
+	this.SelfPubkey, this.SelfSeckey, err = NewCBKeyPair()
 
 	//
-	this.shrkey, err = CBBeforeNm(this.serv_pubkey, this.self_seckey)
+	this.Shrkey, err = CBBeforeNm(this.ServPubkey, this.SelfSeckey)
 	gopp.ErrPrint(err)
 
 	this.conns = NewBiMap()
@@ -86,23 +85,23 @@ func NewTCPClient(serv_addr string, serv_pubkey string) *TCPClient {
 }
 
 func (this *TCPClient) SetKeyPair(pubkey, seckey string) {
-	this.self_pubkey = NewCryptoKeyFromHex(pubkey)
-	this.self_seckey = NewCryptoKeyFromHex(seckey)
+	this.SelfPubkey = NewCryptoKeyFromHex(pubkey)
+	this.SelfSeckey = NewCryptoKeyFromHex(seckey)
 	var err error
-	this.shrkey, err = CBBeforeNm(this.serv_pubkey, this.self_seckey)
+	this.Shrkey, err = CBBeforeNm(this.ServPubkey, this.SelfSeckey)
 	gopp.ErrPrint(err)
 }
 
 func (this *TCPClient) DoHandshake() {
 	this.GenerateHandshake()
-	log.Println("last_packet len:", len(this.last_packet))
+	log.Println("last_packet len:", len(this.LastPacket))
 
-	c, err := net.Dial("tcp", this.serv_addr)
+	c, err := net.Dial("tcp", this.ServAddr)
 	gopp.ErrPrint(err)
 	log.Println(c, c.RemoteAddr().String())
-	this.serv_conn = c
+	this.ServConn = c
 
-	wn, err := c.Write(this.last_packet)
+	wn, err := c.Write(this.LastPacket)
 	gopp.ErrPrint(err)
 	gopp.NilPrint(err, "sent handshake packet:", wn)
 
@@ -121,7 +120,7 @@ func (this *TCPClient) DoHandshake() {
 	ping_pkt := this.MakePingPacket()
 	wn, err = c.Write(ping_pkt)
 	gopp.ErrPrint(err, wn)
-	this.sent_nonce.Incr()
+	this.SentNonce.Incr()
 
 	rdbuf = make([]byte, 300)
 	rn, err = c.Read(rdbuf)
@@ -152,55 +151,55 @@ func (this *TCPClient) StartRead() {
 func (this *TCPClient) GenerateHandshake() {
 	var err error
 	var temp_pubkey *CryptoKey
-	temp_pubkey, this.temp_seckey, err = NewCBKeyPair()
+	temp_pubkey, this.TempSeckey, err = NewCBKeyPair()
 	gopp.ErrPrint(err)
-	this.sent_nonce = CBRandomNonce()
-	this.temp_nonce = CBRandomNonce()
+	this.SentNonce = CBRandomNonce()
+	this.TempNonce = CBRandomNonce()
 
 	plain := []byte{}
 	plain = append(plain, temp_pubkey.Bytes()...)
-	plain = append(plain, this.sent_nonce.Bytes()...)
+	plain = append(plain, this.SentNonce.Bytes()...)
 	gopp.Assert(len(plain) == PUBLIC_KEY_SIZE+NONCE_SIZE, "size error:", len(plain))
 
-	encrypted, err := EncryptDataSymmetric(this.shrkey, this.temp_nonce, plain)
+	encrypted, err := EncryptDataSymmetric(this.Shrkey, this.TempNonce, plain)
 	gopp.ErrPrint(err)
 	gopp.Assert(len(encrypted) == PUBLIC_KEY_SIZE+NONCE_SIZE+MAC_SIZE,
 		"Invalid packet length:", len(encrypted), PUBLIC_KEY_SIZE+NONCE_SIZE+MAC_SIZE)
 
 	if false { // self decrypt
-		shrkey, err_ := CBBeforeNm(this.serv_seckey, this.self_pubkey)
+		shrkey, err_ := CBBeforeNm(this.ServSeckey, this.SelfPubkey)
 		gopp.ErrPrint(err_)
-		plain_, err_ := DecryptDataSymmetric(shrkey, this.temp_nonce, encrypted)
+		plain_, err_ := DecryptDataSymmetric(shrkey, this.TempNonce, encrypted)
 		gopp.Assert(err_ == nil, "decrypt err:", err_, len(plain_))
 	}
 	if true { // self decrypt
-		plain_, err_ := DecryptDataSymmetric(this.shrkey, this.temp_nonce, encrypted)
+		plain_, err_ := DecryptDataSymmetric(this.Shrkey, this.TempNonce, encrypted)
 		gopp.Assert(err_ == nil, "decrypt err:", err_, len(plain_))
 	}
 
-	this.last_packet = append(this.last_packet, this.self_pubkey.Bytes()...)
-	this.last_packet = append(this.last_packet, this.temp_nonce.Bytes()...)
-	this.last_packet = append(this.last_packet, encrypted...)
+	this.LastPacket = append(this.LastPacket, this.SelfPubkey.Bytes()...)
+	this.LastPacket = append(this.LastPacket, this.TempNonce.Bytes()...)
+	this.LastPacket = append(this.LastPacket, encrypted...)
 
 	wantlen := PUBLIC_KEY_SIZE + NONCE_SIZE + MAC_SIZE + len(plain) // 128
-	gopp.Assert(len(this.last_packet) == wantlen,
-		"Invalid packet length:", len(this.last_packet), wantlen)
+	gopp.Assert(len(this.LastPacket) == wantlen,
+		"Invalid packet length:", len(this.LastPacket), wantlen)
 }
 
 func (this *TCPClient) HandleHandshake(rdbuf []byte) {
 	temp_nonce := NewCBNonce(rdbuf[:NONCE_SIZE])
 	encrypted_serv := rdbuf[NONCE_SIZE:]
-	plain_resp, err := DecryptDataSymmetric(this.shrkey, temp_nonce, encrypted_serv)
+	plain_resp, err := DecryptDataSymmetric(this.Shrkey, temp_nonce, encrypted_serv)
 	gopp.ErrPrint(err, "decrypt recv handshake packet failed")
 	gopp.NilPrint(err, "decrypt recv handshake packet success", len(plain_resp))
 	temp_pubkey := NewCryptoKey(plain_resp[:PUBLIC_KEY_SIZE])
-	this.recv_nonce = NewCBNonce(plain_resp[PUBLIC_KEY_SIZE:])
+	this.RecvNonce = NewCBNonce(plain_resp[PUBLIC_KEY_SIZE:])
 	log.Println("temp_pubkey", temp_pubkey.ToHex())
-	log.Println("this.temp_seckey", this.temp_seckey.ToHex())
-	log.Println("this.recv_nonce", this.recv_nonce.ToHex())
-	this.shrkey, err = CBBeforeNm(temp_pubkey, this.temp_seckey)
+	log.Println("this.temp_seckey", this.TempSeckey.ToHex())
+	log.Println("this.recv_nonce", this.RecvNonce.ToHex())
+	this.Shrkey, err = CBBeforeNm(temp_pubkey, this.TempSeckey)
 	gopp.ErrPrint(err)
-	this.temp_seckey = nil          // handshake done, have new shrkey, free
+	this.TempSeckey = nil           // handshake done, have new shrkey, free
 	log.Println("handshake 1 done") // handshake 2 is confirm
 }
 
@@ -208,13 +207,13 @@ func (this *TCPClient) MakePingPacket() []byte {
 	/// first ping
 	ping_plain := gopp.NewBufferZero()
 	ping_plain.WriteByte(byte(TCP_PACKET_PING))
-	ping_id := rand.Uint64()
-	ping_id = gopp.IfElse(ping_id == 0, uint64(1), ping_id).(uint64)
-	this.ping_id = ping_id
-	binary.Write(ping_plain, binary.BigEndian, ping_id)
+	pingid := rand.Uint64()
+	pingid = gopp.IfElse(pingid == 0, uint64(1), pingid).(uint64)
+	this.Pingid = pingid
+	binary.Write(ping_plain, binary.BigEndian, pingid)
 	log.Println(ping_plain.Len())
 
-	ping_encrypted, err := EncryptDataSymmetric(this.shrkey, this.sent_nonce, ping_plain.Bytes())
+	ping_encrypted, err := EncryptDataSymmetric(this.Shrkey, this.SentNonce, ping_plain.Bytes())
 	gopp.ErrPrint(err)
 
 	ping_pkt := gopp.NewBufferZero()
@@ -226,21 +225,21 @@ func (this *TCPClient) MakePingPacket() []byte {
 }
 
 func (this *TCPClient) HandlePingResponse(rpkt []byte) {
-	pong_plain, err := DecryptDataSymmetric(this.shrkey, this.recv_nonce, rpkt[2:])
+	pong_plain, err := DecryptDataSymmetric(this.Shrkey, this.RecvNonce, rpkt[2:])
 	gopp.ErrPrint(err)
 	gopp.NilPrint(err, "decrypt pong packet success", len(pong_plain))
 
 	pong_pkt := gopp.NewBufferBuf(pong_plain)
 	log.Println("pong type:", gopp.Retn(pong_pkt.ReadByte()))
-	var pong_id uint64
-	err = binary.Read(pong_pkt.BufAt(1), binary.BigEndian, &pong_id)
+	var pongid uint64
+	err = binary.Read(pong_pkt.BufAt(1), binary.BigEndian, &pongid)
 	gopp.ErrPrint(err)
 
-	ping_id := this.ping_id
-	log.Println(pong_id == ping_id, pong_id, ping_id)
-	atomic.CompareAndSwapUint64(&this.ping_id, pong_id, 0)
+	pingid := this.Pingid
+	log.Println(pongid == pingid, pongid, pingid)
+	atomic.CompareAndSwapUint64(&this.Pingid, pongid, 0)
 	log.Println("handshake 2 done. confirmed.")
-	this.recv_nonce.Incr()
+	this.RecvNonce.Incr()
 }
 
 func (this *TCPClient) ConnectPeer(pubkey string) {
@@ -252,7 +251,7 @@ func (this *TCPClient) ConnectPeer(pubkey string) {
 	gopp.ErrPrint(err)
 	wn, err := c.Write(encpkt)
 	gopp.ErrPrint(err, wn)
-	this.sent_nonce.Incr()
+	this.SentNonce.Incr()
 	rdbuf := make([]byte, 300)
 	rn, err := c.Read(rdbuf)
 	gopp.ErrPrint(err, rn)
@@ -274,13 +273,13 @@ func (this *TCPClient) HandleRoutingResponse(rpkt []byte) {
 	var datlen uint16
 	err := binary.Read(bytes.NewBuffer(rpkt), binary.BigEndian, &datlen)
 	gopp.ErrPrint(err)
-	rspdat, err := DecryptDataSymmetric(this.shrkey, this.recv_nonce, rpkt[2:])
+	rspdat, err := DecryptDataSymmetric(this.Shrkey, this.RecvNonce, rpkt[2:])
 	gopp.ErrPrint(err)
 	gopp.Assert(rspdat[0] == TCP_PACKET_ROUTING_RESPONSE, "Invalid packet", rspdat[0])
 	connid := rspdat[1]
 	pubkey := NewCryptoKey(rspdat[2 : 2+PUBLIC_KEY_SIZE])
-	log.Println(rspdat[0], connid, pubkey.ToHex()[:20], "<=", this.self_pubkey.ToHex()[:20])
-	this.recv_nonce.Incr()
+	log.Println(rspdat[0], connid, pubkey.ToHex()[:20], "<=", this.SelfPubkey.ToHex()[:20])
+	this.RecvNonce.Incr()
 
 	this.conns.Insert(connid, pubkey.BinStr())
 }
@@ -305,10 +304,30 @@ func (this *TCPClient) SendOOBPacket(pubkey *CryptoKey, data []byte) (encpkt []b
 	return
 }
 
+func (this *TCPClient) SendConnectNotification(connid uint8) (encpkt []byte, err error) {
+	plnpkt := []byte{byte(TCP_PACKET_CONNECTION_NOTIFICATION), connid}
+	encpkt, err = this.CreatePacket(plnpkt)
+	return
+}
+
+func (this *TCPClient) SendDisconnectNotification(connid uint8) (encpkt []byte, err error) {
+	plnpkt := []byte{byte(TCP_PACKET_DISCONNECT_NOTIFICATION), connid}
+	encpkt, err = this.CreatePacket(plnpkt)
+	return
+}
+
+func (this *TCPClient) SendOnionRequest(data []byte) (encpkt []byte, err error) {
+	plnbuf := gopp.NewBufferZero()
+	plnbuf.WriteByte(byte(TCP_PACKET_ONION_REQUEST))
+	plnbuf.Write(data)
+	encpkt, err = this.CreatePacket(plnbuf.Bytes())
+	return
+}
+
 // tcp packet
 func (this *TCPClient) CreatePacket(plain []byte) (encpkt []byte, err error) {
-	log.Println(len(plain), this.shrkey.ToHex()[:20], this.sent_nonce.ToHex())
-	encdat, err := EncryptDataSymmetric(this.shrkey, this.sent_nonce, plain)
+	log.Println(len(plain), this.Shrkey.ToHex()[:20], this.SentNonce.ToHex())
+	encdat, err := EncryptDataSymmetric(this.Shrkey, this.SentNonce, plain)
 	gopp.ErrPrint(err)
 
 	pktbuf := gopp.NewBufferZero()
@@ -322,38 +341,6 @@ func (this *TCPClient) CreatePacket(plain []byte) (encpkt []byte, err error) {
 func (this *TCPClient) Unpacket(encpkt []byte) (datlen uint16, plnpkt []byte, err error) {
 	err = binary.Read(bytes.NewReader(encpkt), binary.BigEndian, &datlen)
 	gopp.ErrPrint(err)
-	plnpkt, err = DecryptDataSymmetric(this.shrkey, this.recv_nonce, encpkt[2:])
-	return
-}
-
-func EncryptDataSymmetric(seckey *CryptoKey, nonce *CBNonce, plain []byte) (encrypted []byte, err error) {
-	temp_plain := make([]byte, len(plain)+cryptobox.CryptoBoxZeroBytes())
-	n := copy(temp_plain[cryptobox.CryptoBoxZeroBytes():], plain)
-	gopp.Assert(n == len(plain), "copy error", n, len(plain))
-
-	encrypted, err = CBAfterNm(seckey, nonce, temp_plain)
-	if err != nil {
-		err = errors.Wrap(err, "")
-		return
-	}
-
-	encrypted = encrypted[cryptobox.CryptoBoxBoxZeroBytes():]
-	gopp.Assert(len(encrypted) == len(plain)+cryptobox.CryptoBoxMacBytes(),
-		"size error:", len(encrypted), len(plain))
-	return
-}
-
-func DecryptDataSymmetric(seckey *CryptoKey, nonce *CBNonce, encrypted []byte) (plain []byte, err error) {
-	temp_encrypted := make([]byte, len(encrypted)+cryptobox.CryptoBoxBoxZeroBytes())
-	copy(temp_encrypted[cryptobox.CryptoBoxBoxZeroBytes():], encrypted)
-
-	plain, err = CBOpenAfterNm(seckey, nonce, temp_encrypted)
-	gopp.ErrPrint(err, len(plain), len(encrypted))
-	plain = plain[cryptobox.CryptoBoxZeroBytes():]
-	gopp.Assert(len(plain) == len(encrypted)-cryptobox.CryptoBoxMacBytes(),
-		"size error:", len(plain), len(encrypted))
-	if err != nil {
-		err = errors.Wrap(err, "")
-	}
+	plnpkt, err = DecryptDataSymmetric(this.Shrkey, this.RecvNonce, encpkt[2:])
 	return
 }

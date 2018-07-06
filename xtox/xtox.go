@@ -108,11 +108,11 @@ type _XTox struct {
 	t                *tox.Tox
 	oilC             chan interface{}
 	invitedGroups    *hashbidimap.Map
-	groupIdentifiers *hashbidimap.Map
-	groupPeerKeys    *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => pubkey
-	groupPeerNames   *hashmap.Map // uint32 => Map[uint32]pubkey, group number => peer number => name
-	groupTitles      *hashmap.Map // uint32 => string, group number => group title
-	groupPeers       *hashmap.Map // TODO uint32 => Map[uint32]*PeerInfo
+	groupIdentifiers *hashbidimap.Map // TODO this maybe have bug, can not keep sync to toxcore's list
+	groupPeerKeys    *hashmap.Map     // uint32 => Map[uint32]pubkey, group number => peer number => pubkey
+	groupPeerNames   *hashmap.Map     // uint32 => Map[uint32]pubkey, group number => peer number => name
+	groupTitles      *hashmap.Map     // uint32 => string, group number => group title
+	groupPeers       *hashmap.Map     // TODO uint32 => Map[uint32]*PeerInfo
 	needReconn       int32
 }
 

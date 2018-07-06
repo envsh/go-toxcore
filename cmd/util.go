@@ -9,4 +9,6 @@ func (this ByteArray) Slice(low int, length int) ByteArray {
 	return nil
 }
 
+type Object = interface{}
+
 var TimeZero time.Time
