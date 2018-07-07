@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-var mode = "srv" // cli
+var mode = "" // srv or cli
 
 func init() {
 	flag.StringVar(&mode, "mode", mode, "echo srv or cli")

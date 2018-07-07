@@ -11,7 +11,9 @@ import (
 	"net"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
+	"github.com/djherbis/buffer"
 	"github.com/pkg/errors"
 )
 
@@ -103,7 +105,8 @@ type TCPClient struct {
 	}
 
 	conn  net.Conn
-	conns *BiMap // connid uint8 <=> pkbinstr
+	crbuf buffer.Buffer // conn read ring buffer
+	conns *BiMap        // connid uint8 <=> pkbinstr
 
 	RoutingResponseFunc   func(object Object, connection_id uint8, pubkey *CryptoKey)
 	RoutingResponseCbdata Object
@@ -174,6 +177,7 @@ func (this *TCPClient) connect() *TCPClient {
 	gopp.ErrPrint(err, this.ServAddr)
 	log.Println("Connected to:", c.RemoteAddr())
 	this.conn = c
+	this.crbuf = buffer.NewRing(buffer.New(1024 * 1024))
 
 	this.start()
 	return this
@@ -187,12 +191,18 @@ func (this *TCPClient) Close() error {
 	return errors.Errorf("Not connected: %s", this.ServAddr)
 }
 
-func (this *TCPClient) start() { go this.doRead() }
-func (this *TCPClient) doRead() {
+func (this *TCPClient) start() { go this.doReadConn() }
+func (this *TCPClient) doReadConn() {
+	btime := time.Now()
+	ltime := btime
+	var totlen int64
+	var avgspd int64
+
+	var nxtpktlen uint16
 	stop := false
 	for !stop {
 		c := this.conn
-		log.Println("async reading...")
+		log.Printf("------- async reading... ----- spd: %d ------\n", avgspd)
 		rdbuf := make([]byte, 300)
 		rn, err := c.Read(rdbuf)
 		gopp.ErrPrint(err, rn)
@@ -203,17 +213,75 @@ func (this *TCPClient) doRead() {
 			break
 		}
 		rdbuf = rdbuf[:rn]
-
 		if rn < 1 {
 			log.Println("Invalid packet:", rn, this.ServAddr)
 			break
 		}
+
+		totlen += int64(rn)
+		etime := time.Now()
+		if etime.Sub(ltime).Seconds() > 30 {
+			btime = etime.Add(-1 * time.Second) // reset begin time
+			totlen = int64(rn)
+		}
+		if etime.Sub(ltime).Seconds() > 1 {
+			ltime = etime
+			d := int64(etime.Sub(btime).Seconds())
+			if d != 0 {
+				avgspd = totlen / d
+			}
+		}
+
+		gopp.Assert(this.crbuf.Len()+int64(rn) <= this.crbuf.Cap(), "ring buffer full",
+			this.crbuf.Len()+int64(rn), this.crbuf.Cap())
+		wn, err := this.crbuf.Write(rdbuf)
+		gopp.ErrPrint(err)
+		gopp.Assert(wn == rn, "write ring buffer failed", rn, wn)
+		this.doReadPacket(&nxtpktlen)
+	}
+	log.Println("tcp client done.", this.ServAddr, tcpstname(this.Status))
+}
+func (this *TCPClient) doReadPacket(nxtpktlen *uint16) {
+	stop := false
+	for !stop {
+		var rdbuf []byte
+		switch {
+		case this.Status == TCP_CLIENT_CONNECTING:
+			// handshake response packet
+			*nxtpktlen = NONCE_SIZE + (PUBLIC_KEY_SIZE + NONCE_SIZE + MAC_SIZE)
+			rdbuf = make([]byte, *nxtpktlen)
+			rn, err := this.crbuf.Read(rdbuf)
+			gopp.ErrPrint(err)
+			gopp.Assert(rn == cap(rdbuf), "not read enough data", rn, cap(rdbuf))
+		case this.Status == TCP_CLIENT_UNCONFIRMED || this.Status == TCP_CLIENT_CONFIRMED:
+			// length+payload
+			if *nxtpktlen == 0 && this.crbuf.Len() < int64(unsafe.Sizeof(uint16(0))) {
+				return
+			}
+			if *nxtpktlen == 0 && this.crbuf.Len() >= int64(unsafe.Sizeof(uint16(0))) {
+				pktlenbuf := make([]byte, 2)
+				rn, err := this.crbuf.Read(pktlenbuf)
+				gopp.ErrPrint(err, rn)
+				err = binary.Read(bytes.NewBuffer(pktlenbuf), binary.BigEndian, nxtpktlen)
+				gopp.ErrPrint(err)
+			}
+			if this.crbuf.Len() < int64(*nxtpktlen) {
+				return
+			}
+			rdbuf = make([]byte, 2+*nxtpktlen)
+			binary.Write(gopp.NewBufferBuf(rdbuf), binary.BigEndian, *nxtpktlen)
+			rn, err := this.crbuf.Read(rdbuf[2:])
+			gopp.ErrPrint(err)
+			gopp.Assert(rn+2 == cap(rdbuf), "not read enough data", rn+2, cap(rdbuf))
+		}
+		*nxtpktlen = 0
+
 		switch {
 		case this.Status == TCP_CLIENT_CONNECTING:
 			this.HandleHandshake(rdbuf)
 			// ping
 			ping_pkt := this.MakePingPacket()
-			wn, err := c.Write(ping_pkt)
+			wn, err := this.conn.Write(ping_pkt)
 			gopp.ErrPrint(err, wn)
 			this.Status = TCP_CLIENT_UNCONFIRMED
 		case this.Status == TCP_CLIENT_UNCONFIRMED:
@@ -255,7 +323,6 @@ func (this *TCPClient) doRead() {
 			log.Fatalln("wtf", tcpstname(this.Status))
 		}
 	}
-	log.Println("tcp client done.", this.ServAddr, tcpstname(this.Status))
 }
 
 func (this *TCPClient) DoHandshake() {
