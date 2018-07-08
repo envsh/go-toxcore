@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"gopp"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -15,6 +14,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/Workiva/go-datastructures/queue"
 	"github.com/djherbis/buffer"
 	"github.com/pkg/errors"
 )
@@ -106,12 +106,13 @@ type TCPClient struct {
 		Number uint32
 	}
 
-	conn   net.Conn
-	crbuf  buffer.Buffer // conn read ring buffer
-	cwbuf  buffer.Buffer
-	cwcond *sync.Cond
-	cwmu   sync.Mutex
-	conns  *BiMap // connid uint8 <=> pkbinstr
+	conn    net.Conn
+	crbuf   buffer.Buffer // conn read ring buffer
+	cwctrlq *queue.Queue  // ctrl packets like pong []byte
+	cwdataq *queue.Queue
+	cwcond  *sync.Cond
+	cwmu    sync.Mutex
+	conns   *BiMap // connid uint8 <=> pkbinstr
 
 	RoutingResponseFunc   func(object Object, connection_id uint8, pubkey *CryptoKey)
 	RoutingResponseCbdata Object
@@ -184,7 +185,8 @@ func (this *TCPClient) connect() *TCPClient {
 	log.Println("Connected to:", c.RemoteAddr())
 	this.conn = c
 	this.crbuf = buffer.NewRing(buffer.New(1024 * 1024))
-	this.cwbuf = buffer.NewSpill(buffer.New(32*1024), ioutil.Discard)
+	this.cwctrlq = queue.New(128)
+	this.cwdataq = queue.New(256)
 
 	this.start()
 	return this
@@ -203,38 +205,64 @@ func (this *TCPClient) start() {
 	go this.doReadConn()
 }
 func (this *TCPClient) doWriteConn() {
-	rdbuf := make([]byte, 3000)
+	spdc := NewSpeedCalc()
+
+	flushCtrl := func() error {
+		for !this.cwctrlq.Empty() {
+			datai, err := this.cwctrlq.Get(1)
+			gopp.ErrPrint(err, this.ServAddr)
+			wn, err := this.WritePacket(datai[0].([]byte))
+			gopp.ErrPrint(err, wn, this.ServAddr)
+			if err != nil {
+				return err
+			}
+			spdc.Data(wn)
+			// gopp.Assert(wn == len(datai[0].([]byte)), "write lost", wn, len(datai[0].([]byte)), this.ServAddr)
+		}
+		return nil
+	}
+
 	stop := false
 	for !stop {
 		this.cwmu.Lock()
 		this.cwcond.Wait()
 		this.cwmu.Unlock()
-		rn, err := this.cwbuf.Read(rdbuf)
-		gopp.ErrPrint(err, this.ServAddr)
-		if err != nil && err != io.EOF {
-			break
-		}
-		wn, err := this.conn.Write(rdbuf[:rn])
+
+		err := flushCtrl()
 		gopp.ErrPrint(err)
 		if err != nil {
 			break
 		}
-		gopp.Assert(wn == rn, "write lost", wn, rn, this.ServAddr)
-	}
-	log.Println("write routine done:", this.ServAddr)
 
+		for !this.cwdataq.Empty() {
+			datai, err := this.cwdataq.Get(1)
+			gopp.ErrPrint(err, this.ServAddr)
+			wn, err := this.WritePacket(datai[0].([]byte))
+			gopp.ErrPrint(err, wn, this.ServAddr)
+			if err != nil {
+				goto endloop
+			}
+			spdc.Data(wn)
+			// gopp.Assert(wn == len(datai[0].([]byte)), "write lost", wn, len(datai[0].([]byte)), this.ServAddr)
+			err = flushCtrl()
+			gopp.ErrPrint(err)
+			if err != nil {
+				goto endloop
+			}
+		}
+		log.Printf("------- async wrote ----- spd: %d, %s, pq:%d, cq:%d------\n",
+			spdc.Avgspd, this.ServAddr, this.cwctrlq.Len(), this.cwdataq.Len())
+	}
+endloop:
+	log.Println("write routine done:", this.ServAddr)
 }
 func (this *TCPClient) doReadConn() {
-	btime := time.Now()
-	ltime := btime
-	var totlen int64
-	var avgspd int64
-
+	spdc := NewSpeedCalc()
 	var nxtpktlen uint16
 	stop := false
 	for !stop {
 		c := this.conn
-		log.Printf("------- async reading... ----- spd: %d, %s ------\n", avgspd, this.ServAddr)
+		log.Printf("------- async reading... ----- spd: %d, %s ------\n", spdc.Avgspd, this.ServAddr)
 		rdbuf := make([]byte, 3000)
 		rn, err := c.Read(rdbuf)
 		gopp.ErrPrint(err, rn, this.ServAddr)
@@ -250,20 +278,7 @@ func (this *TCPClient) doReadConn() {
 			break
 		}
 
-		totlen += int64(rn)
-		etime := time.Now()
-		if etime.Sub(ltime).Seconds() > 30 {
-			btime = etime.Add(-1 * time.Second) // reset begin time
-			totlen = int64(rn)
-		}
-		if etime.Sub(ltime).Seconds() > 1 {
-			ltime = etime
-			d := int64(etime.Sub(btime).Seconds())
-			if d != 0 {
-				avgspd = totlen / d
-			}
-		}
-
+		spdc.Data(rn)
 		gopp.Assert(this.crbuf.Len()+int64(rn) <= this.crbuf.Cap(), "ring buffer full",
 			this.crbuf.Len()+int64(rn), this.crbuf.Cap())
 		wn, err := this.crbuf.Write(rdbuf)
@@ -315,6 +330,7 @@ func (this *TCPClient) doReadPacket(nxtpktlen *uint16) {
 			ping_pkt := this.MakePingPacket()
 			wn, err := this.conn.Write(ping_pkt)
 			gopp.ErrPrint(err, wn)
+			this.SentNonce.Incr()
 			this.Status = TCP_CLIENT_UNCONFIRMED
 		case this.Status == TCP_CLIENT_UNCONFIRMED:
 			datlen, plnpkt, err := this.Unpacket(rdbuf)
@@ -507,10 +523,11 @@ func (this *TCPClient) HandlePingRequest(rpkt []byte) {
 	plnpkt.WriteByte(byte(TCP_PACKET_PONG))
 	plnpkt.Write(rpkt[1:]) // pingid
 
-	encpkt, err := this.CreatePacket(plnpkt.Bytes())
-	gopp.ErrPrint(err)
-	wn, err := this.conn.Write(encpkt)
-	gopp.ErrPrint(err, wn)
+	this.SendCtrlPacket(plnpkt.Bytes())
+	// encpkt, err := this.CreatePacket(plnpkt.Bytes())
+	// gopp.ErrPrint(err)
+	// wn, err := this.conn.Write(encpkt)
+	// gopp.ErrPrint(err, wn)
 }
 
 func (this *TCPClient) ConnectPeer(pubkey string) {
@@ -523,20 +540,8 @@ func (this *TCPClient) ConnectPeer(pubkey string) {
 	}
 
 	// routing request
-	// encpkt, err := this.SendRoutingRequest(NewCryptoKeyFromHex(echo_serv_pubkey_str))
 	encpkt, err := this.SendRoutingRequest(NewCryptoKeyFromHex(pubkey))
-	gopp.ErrPrint(err)
-	wn, err := c.Write(encpkt)
-	gopp.ErrPrint(err, wn)
-
-	/*
-		rdbuf := make([]byte, 300)
-		rn, err := c.Read(rdbuf)
-		gopp.ErrPrint(err, rn)
-		rdbuf = rdbuf[:rn]
-		gopp.NilPrint(err, "recv routing response packet success", rn)
-		this.HandleRoutingResponse(rdbuf)
-	*/
+	gopp.ErrPrint(err, len(encpkt))
 }
 
 func (this *TCPClient) SendRoutingRequest(pubkey *CryptoKey) (encpkt []byte, err error) {
@@ -544,7 +549,8 @@ func (this *TCPClient) SendRoutingRequest(pubkey *CryptoKey) (encpkt []byte, err
 	buf.WriteByte(byte(TCP_PACKET_ROUTING_REQUEST))
 	buf.Write(pubkey.Bytes())
 
-	encpkt, err = this.CreatePacket(buf.Bytes())
+	_, err = this.SendCtrlPacket(buf.Bytes())
+	// encpkt, err = this.CreatePacket(buf.Bytes())
 	return
 }
 
@@ -568,16 +574,42 @@ func (this *TCPClient) HandleRoutingData(rpkt []byte) {
 	}
 }
 
+func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
+	if this.cwctrlq.Len() >= 256 {
+		log.Println("Ctrl queue is full, discarding pkt...", len(data))
+		return nil, errors.New("Ctrl queue is full")
+	}
+	btime := time.Now()
+	this.cwctrlq.Put(data)
+	this.cwcond.Signal()
+	// encpkt, err = this.CreatePacket(buf.Bytes())
+	// this.WritePacket(encpkt)
+	dtime := time.Since(btime)
+	if dtime > 2*time.Millisecond {
+		log.Fatalln("send use too long", len(data), dtime)
+	}
+	return
+}
+
+// TODO split data
 func (this *TCPClient) SendDataPacket(connid uint8, data []byte) (encpkt []byte, err error) {
+	if len(data) > 2048 {
+		return nil, errors.Errorf("Data too long: %d, want: %d", len(data), 2048)
+	}
+	if this.cwdataq.Len() >= 256 {
+		log.Println("Data queue is full, discard pkt.", this.cwdataq.Len(), connid, len(data))
+		this.cwcond.Signal()
+		return nil, errors.New("Data queue is full")
+	}
 	buf := gopp.NewBufferZero()
 	buf.WriteByte(byte(connid))
 	buf.Write(data)
 	btime := time.Now()
-	encpkt, err = this.CreatePacket(buf.Bytes())
-	this.WritePacket(encpkt)
+	this.cwdataq.Put(buf.Bytes())
+	this.cwcond.Signal()
 	dtime := time.Since(btime)
 	if dtime > 2*time.Millisecond {
-		log.Fatalln("send use too long", len(data), dtime)
+		log.Println("send use too long", len(data), dtime)
 	}
 	return
 }
@@ -588,19 +620,19 @@ func (this *TCPClient) SendOOBPacket(pubkey *CryptoKey, data []byte) (encpkt []b
 	buf.Write(pubkey.Bytes())
 	buf.Write(data)
 
-	encpkt, err = this.CreatePacket(buf.Bytes())
+	_, err = this.SendCtrlPacket(buf.Bytes())
 	return
 }
 
 func (this *TCPClient) SendConnectNotification(connid uint8) (encpkt []byte, err error) {
 	plnpkt := []byte{byte(TCP_PACKET_CONNECTION_NOTIFICATION), connid}
-	encpkt, err = this.CreatePacket(plnpkt)
+	_, err = this.SendCtrlPacket(plnpkt)
 	return
 }
 
 func (this *TCPClient) SendDisconnectNotification(connid uint8) (encpkt []byte, err error) {
 	plnpkt := []byte{byte(TCP_PACKET_DISCONNECT_NOTIFICATION), connid}
-	encpkt, err = this.CreatePacket(plnpkt)
+	_, err = this.SendCtrlPacket(plnpkt)
 	return
 }
 
@@ -608,7 +640,7 @@ func (this *TCPClient) SendOnionRequest(data []byte) (encpkt []byte, err error) 
 	plnbuf := gopp.NewBufferZero()
 	plnbuf.WriteByte(byte(TCP_PACKET_ONION_REQUEST))
 	plnbuf.Write(data)
-	encpkt, err = this.CreatePacket(plnbuf.Bytes())
+	_, err = this.SendCtrlPacket(plnbuf.Bytes())
 	return
 }
 
@@ -626,15 +658,13 @@ func (this *TCPClient) HandleDisconnectNotification(rpkt []byte) {
 }
 
 func (this *TCPClient) WritePacket(data []byte) (int, error) {
-	// why Cap is 9223372036854775807
-	if this.cwbuf.Len()+int64(len(data)) > 32*1024 {
-		log.Println("buffer is full, discarding pkt...", len(data))
-		return 0, errors.New("buffer is full")
-	}
-	wn, err := this.cwbuf.Write(data)
-	// wn, err := this.conn.Write(data)
+	encpkt, err := this.CreatePacket(data)
 	gopp.ErrPrint(err)
-	this.cwcond.Signal()
+	wn, err := this.conn.Write(encpkt)
+	gopp.ErrPrint(err)
+	if err == nil {
+		this.SentNonce.Incr()
+	}
 	return wn, err
 }
 
@@ -649,7 +679,7 @@ func (this *TCPClient) CreatePacket(plain []byte) (encpkt []byte, err error) {
 	pktbuf.Write(encdat)
 	encpkt = pktbuf.Bytes()
 	// log.Println("create pkg:", tcppktname(plain[0]), len(encpkt), len(plain))
-	this.SentNonce.Incr()
+	// this.SentNonce.Incr()
 	return
 }
 
