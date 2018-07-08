@@ -1,4 +1,4 @@
-package main
+package mintox
 
 /*
 #cgo LDFLAGS: -lsodium

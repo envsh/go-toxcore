@@ -1,11 +1,11 @@
-package main
+package mintox
 
 import (
 	"flag"
 	"log"
 )
 
-func main() {
+func Main() {
 	flag.Parse()
 
 	test_tcp_client()

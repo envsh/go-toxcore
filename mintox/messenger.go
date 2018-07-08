@@ -1,4 +1,4 @@
-package main
+package mintox
 
 const MAX_NAME_LENGTH = 128
 
