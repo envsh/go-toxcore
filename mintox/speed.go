@@ -7,6 +7,7 @@ type SpeedCalc struct {
 	Ltime  time.Time // last data time
 	Totlen int64
 	Avgspd int64
+	Datcnt int64
 }
 
 func NewSpeedCalc() *SpeedCalc {
@@ -31,4 +32,5 @@ func (this *SpeedCalc) Data(rn int) {
 			this.Avgspd = this.Totlen / d
 		}
 	}
+	this.Datcnt += 1
 }

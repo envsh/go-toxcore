@@ -130,6 +130,9 @@ type TCPClient struct {
 	CustomInt    uint32
 
 	OnConfirmed func()
+	OnClosed    func(*TCPClient)
+	OnNetRecv   func(n int)
+	OnNetSent   func(n int)
 }
 
 // TODO proxy
@@ -158,7 +161,16 @@ func NewTCPClient(serv_addr string, serv_pubkey, self_pubkey, self_seckey *Crypt
 	this.conns = NewBiMap()
 
 	this.cwcond = sync.NewCond(&this.cwmu)
-	go this.connect().SendHandshake()
+	go func() {
+		err := this.connect()
+		if err == nil {
+			this.SendHandshake()
+		} else {
+			if this.OnClosed != nil {
+				this.OnClosed(this)
+			}
+		}
+	}()
 	return this
 }
 
@@ -178,10 +190,13 @@ func (this *TCPClient) SetKeyPair(pubkey, seckey *CryptoKey) {
 	gopp.ErrPrint(err)
 }
 
-func (this *TCPClient) connect() *TCPClient {
+func (this *TCPClient) connect() error {
 	this.Status = TCP_CLIENT_CONNECTING
 	c, err := net.Dial("tcp", this.ServAddr)
 	gopp.ErrPrint(err, this.ServAddr)
+	if err != nil {
+		return err
+	}
 	log.Println("Connected to:", c.RemoteAddr())
 	this.conn = c
 	this.crbuf = buffer.NewRing(buffer.New(1024 * 1024))
@@ -189,7 +204,7 @@ func (this *TCPClient) connect() *TCPClient {
 	this.cwdataq = queue.New(256)
 
 	this.start()
-	return this
+	return nil
 }
 
 func (this *TCPClient) Close() error {
@@ -217,11 +232,15 @@ func (this *TCPClient) doWriteConn() {
 				return err
 			}
 			spdc.Data(wn)
+			if this.OnNetSent != nil {
+				this.OnNetSent(wn)
+			}
 			// gopp.Assert(wn == len(datai[0].([]byte)), "write lost", wn, len(datai[0].([]byte)), this.ServAddr)
 		}
 		return nil
 	}
 
+	lastLogTime := time.Now().Add(-3 * time.Second)
 	stop := false
 	for !stop {
 		this.cwmu.Lock()
@@ -243,6 +262,9 @@ func (this *TCPClient) doWriteConn() {
 				goto endloop
 			}
 			spdc.Data(wn)
+			if this.OnNetSent != nil {
+				this.OnNetSent(wn)
+			}
 			// gopp.Assert(wn == len(datai[0].([]byte)), "write lost", wn, len(datai[0].([]byte)), this.ServAddr)
 			err = flushCtrl()
 			gopp.ErrPrint(err)
@@ -250,19 +272,26 @@ func (this *TCPClient) doWriteConn() {
 				goto endloop
 			}
 		}
-		log.Printf("------- async wrote ----- spd: %d, %s, pq:%d, cq:%d------\n",
-			spdc.Avgspd, this.ServAddr, this.cwctrlq.Len(), this.cwdataq.Len())
+		if int(time.Since(lastLogTime).Seconds()) >= 1 {
+			lastLogTime = time.Now()
+			log.Printf("------- async wrote ----- spd: %d, %s, pq:%d, cq:%d------\n",
+				spdc.Avgspd, this.ServAddr, this.cwctrlq.Len(), this.cwdataq.Len())
+		}
 	}
 endloop:
 	log.Println("write routine done:", this.ServAddr)
 }
 func (this *TCPClient) doReadConn() {
+	lastLogTime := time.Now().Add(-3 * time.Second)
 	spdc := NewSpeedCalc()
 	var nxtpktlen uint16
 	stop := false
 	for !stop {
 		c := this.conn
-		log.Printf("------- async reading... ----- spd: %d, %s ------\n", spdc.Avgspd, this.ServAddr)
+		if int(time.Since(lastLogTime).Seconds()) >= 1 {
+			lastLogTime = time.Now()
+			log.Printf("------- async reading... ----- spd: %d, %s ------\n", spdc.Avgspd, this.ServAddr)
+		}
 		rdbuf := make([]byte, 3000)
 		rn, err := c.Read(rdbuf)
 		gopp.ErrPrint(err, rn, this.ServAddr)
@@ -278,6 +307,9 @@ func (this *TCPClient) doReadConn() {
 			break
 		}
 
+		if this.OnNetRecv != nil {
+			this.OnNetRecv(rn)
+		}
 		spdc.Data(rn)
 		gopp.Assert(this.crbuf.Len()+int64(rn) <= this.crbuf.Cap(), "ring buffer full",
 			this.crbuf.Len()+int64(rn), this.crbuf.Cap())
@@ -287,6 +319,9 @@ func (this *TCPClient) doReadConn() {
 		this.doReadPacket(&nxtpktlen)
 	}
 	log.Println("tcp client done.", this.ServAddr, tcpstname(this.Status))
+	if this.OnClosed != nil {
+		this.OnClosed(this)
+	}
 }
 func (this *TCPClient) doReadPacket(nxtpktlen *uint16) {
 	stop := false
