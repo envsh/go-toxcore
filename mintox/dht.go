@@ -465,14 +465,14 @@ func (this *DHT) HandleSendNodesIpv6(object interface{}, addr net.Addr, data []b
 	// log.Println("numNodes=", numNodes)
 	var pingid uint64
 	reqidpos := len(plain) - int(unsafe.Sizeof(pingid))
-	err = binary.Read(plainBuf.BufAt(reqidpos), binary.BigEndian, &pingid)
+	err = binary.Read(plainBuf.RBufAt(reqidpos), binary.BigEndian, &pingid)
 	gopp.ErrPrint(err, reqidpos)
 	// log.Println("pingid=", pingid)
 	// TODO check pingid is our sent
 
 	//
 	for i, offset := 0, 1; i < int(numNodes); i++ {
-		tmpbuf := plainBuf.BufAt(offset)
+		tmpbuf := plainBuf.RBufAt(offset)
 		tmplen := tmpbuf.Len()
 		byte0, err := tmpbuf.ReadByte()
 		gopp.ErrPrint(err)

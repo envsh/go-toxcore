@@ -549,7 +549,7 @@ func (this *TCPClient) HandlePingResponse(rpkt []byte) {
 	pong_pkt := gopp.NewBufferBuf(rpkt)
 	log.Println("pong type:", gopp.Retn(pong_pkt.ReadByte()))
 	var pongid uint64
-	err := binary.Read(pong_pkt.BufAt(1), binary.BigEndian, &pongid)
+	err := binary.Read(pong_pkt.RBufAt(1), binary.BigEndian, &pongid)
 	gopp.ErrPrint(err)
 
 	pingid := this.Pingid

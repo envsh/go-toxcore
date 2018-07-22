@@ -1,7 +1,6 @@
 package mintox
 
 import (
-	"flag"
 	"log"
 	"time"
 )
@@ -9,7 +8,7 @@ import (
 var mode = "" // srv or cli
 
 func init() {
-	flag.StringVar(&mode, "mode", mode, "echo srv or cli")
+	// flag.StringVar(&mode, "mode", mode, "echo srv or cli")
 }
 
 func test_two_nodes() {
