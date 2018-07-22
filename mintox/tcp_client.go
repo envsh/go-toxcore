@@ -9,12 +9,10 @@ import (
 	"log"
 	"math/rand"
 	"net"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 
-	"github.com/Workiva/go-datastructures/queue"
 	"github.com/djherbis/buffer"
 	"github.com/pkg/errors"
 )
@@ -106,13 +104,13 @@ type TCPClient struct {
 		Number uint32
 	}
 
-	conn    net.Conn
-	crbuf   buffer.Buffer // conn read ring buffer
-	cwctrlq *queue.Queue  // ctrl packets like pong []byte
-	cwdataq *queue.Queue
-	cwcond  *sync.Cond
-	cwmu    sync.Mutex
-	conns   *BiMap // connid uint8 <=> pkbinstr
+	conn       net.Conn
+	crbuf      buffer.Buffer // conn read ring buffer
+	cwctrlq    chan []byte   // ctrl packets like pong []byte
+	cwctrldlen int32         // data length of cwctrlq
+	cwdataq    chan []byte
+	cwdatadlen int32  // data length of cwdataq
+	conns      *BiMap // connid uint8 <=> pkbinstr
 
 	RoutingResponseFunc   func(object Object, connection_id uint8, pubkey *CryptoKey)
 	RoutingResponseCbdata Object
@@ -129,10 +127,11 @@ type TCPClient struct {
 	CustomObject Object
 	CustomInt    uint32
 
-	OnConfirmed func()
-	OnClosed    func(*TCPClient)
-	OnNetRecv   func(n int)
-	OnNetSent   func(n int)
+	OnConfirmed    func()
+	OnClosed       func(*TCPClient)
+	OnNetRecv      func(n int)
+	OnNetSent      func(n int)
+	OnReservedData func(object Object, number uint32, connection_id uint8, data []byte, cbdata Object)
 }
 
 // TODO proxy
@@ -160,7 +159,6 @@ func NewTCPClient(serv_addr string, serv_pubkey, self_pubkey, self_seckey *Crypt
 
 	this.conns = NewBiMap()
 
-	this.cwcond = sync.NewCond(&this.cwmu)
 	go func() {
 		err := this.connect()
 		if err == nil {
@@ -197,11 +195,15 @@ func (this *TCPClient) connect() error {
 	if err != nil {
 		return err
 	}
-	log.Println("Connected to:", c.RemoteAddr())
+	tcpc := c.(*net.TCPConn)
+	err = tcpc.SetWriteBuffer(128 * 1024)
+	gopp.ErrPrint(err)
+	log.Println("Connected to:", c.RemoteAddr(), err)
+
 	this.conn = c
 	this.crbuf = buffer.NewRing(buffer.New(1024 * 1024))
-	this.cwctrlq = queue.New(128)
-	this.cwdataq = queue.New(256)
+	this.cwctrlq = make(chan []byte, 32)
+	this.cwdataq = make(chan []byte, 128)
 
 	this.start()
 	return nil
@@ -223,9 +225,10 @@ func (this *TCPClient) doWriteConn() {
 	spdc := NewSpeedCalc()
 
 	flushCtrl := func() error {
-		for !this.cwctrlq.Empty() {
-			datai, err := this.cwctrlq.Get(1)
-			gopp.ErrPrint(err, this.ServAddr)
+		for len(this.cwctrlq) > 0 {
+			data := <-this.cwctrlq
+			atomic.AddInt32(&this.cwctrldlen, -int32(len(data)))
+			var datai = []interface{}{data}
 			wn, err := this.WritePacket(datai[0].([]byte))
 			gopp.ErrPrint(err, wn, this.ServAddr)
 			if err != nil {
@@ -243,39 +246,38 @@ func (this *TCPClient) doWriteConn() {
 	lastLogTime := time.Now().Add(-3 * time.Second)
 	stop := false
 	for !stop {
-		this.cwmu.Lock()
-		this.cwcond.Wait()
-		this.cwmu.Unlock()
-
-		err := flushCtrl()
-		gopp.ErrPrint(err)
-		if err != nil {
-			break
+		data, ctrlq := []byte(nil), false
+		select {
+		case data = <-this.cwctrlq:
+			atomic.AddInt32(&this.cwctrldlen, -int32(len(data)))
+			ctrlq = true
+		case data = <-this.cwdataq:
+			atomic.AddInt32(&this.cwdatadlen, -int32(len(data)))
 		}
 
-		for !this.cwdataq.Empty() {
-			datai, err := this.cwdataq.Get(1)
-			gopp.ErrPrint(err, this.ServAddr)
-			wn, err := this.WritePacket(datai[0].([]byte))
-			gopp.ErrPrint(err, wn, this.ServAddr)
-			if err != nil {
-				goto endloop
-			}
-			spdc.Data(wn)
-			if this.OnNetSent != nil {
-				this.OnNetSent(wn)
-			}
-			// gopp.Assert(wn == len(datai[0].([]byte)), "write lost", wn, len(datai[0].([]byte)), this.ServAddr)
+		var datai = []interface{}{data}
+		wn, err := this.WritePacket(datai[0].([]byte))
+		gopp.ErrPrint(err, wn, this.ServAddr)
+		if err != nil {
+			goto endloop
+		}
+		spdc.Data(wn)
+		if this.OnNetSent != nil {
+			this.OnNetSent(wn)
+		}
+		// gopp.Assert(wn == len(datai[0].([]byte)), "write lost", wn, len(datai[0].([]byte)), this.ServAddr)
+		if !ctrlq {
 			err = flushCtrl()
 			gopp.ErrPrint(err)
 			if err != nil {
 				goto endloop
 			}
 		}
+
 		if int(time.Since(lastLogTime).Seconds()) >= 1 {
 			lastLogTime = time.Now()
 			log.Printf("------- async wrote ----- spd: %d, %s, pq:%d, cq:%d------\n",
-				spdc.Avgspd, this.ServAddr, this.cwctrlq.Len(), this.cwdataq.Len())
+				spdc.Avgspd, this.ServAddr, len(this.cwctrlq), len(this.cwdataq))
 		}
 	}
 endloop:
@@ -382,9 +384,10 @@ func (this *TCPClient) doReadPacket(nxtpktlen *uint16) {
 			datlen, plnpkt, err := this.Unpacket(rdbuf)
 			gopp.ErrPrint(err)
 			ptype := plnpkt[0]
-			log.Printf("read data pkt: rdlen:%d, datlen:%d, pktype: %d, pktname: %s\n",
-				len(rdbuf), datlen, ptype, tcppktname(ptype))
-
+			if ptype < NUM_RESERVED_PORTS {
+				log.Printf("read data pkt: rdlen:%d, datlen:%d, pktype: %d, pktname: %s\n",
+					len(rdbuf), datlen, ptype, tcppktname(ptype))
+			}
 			switch {
 			case ptype == TCP_PACKET_PING:
 				this.HandlePingRequest(plnpkt)
@@ -396,10 +399,12 @@ func (this *TCPClient) doReadPacket(nxtpktlen *uint16) {
 				this.HandleConnectionNotification(plnpkt)
 			case ptype == TCP_PACKET_DISCONNECT_NOTIFICATION:
 				this.HandleDisconnectNotification(plnpkt)
-			case ptype == TCP_PACKET_OOB_RECV:
-			case ptype == TCP_PACKET_ONION_RESPONSE:
+			case ptype == TCP_PACKET_OOB_RECV: // TODO
+			case ptype == TCP_PACKET_ONION_RESPONSE: // TODO
 			case ptype >= NUM_RESERVED_PORTS:
 				this.HandleRoutingData(plnpkt)
+			case ptype > TCP_PACKET_ONION_RESPONSE && ptype < NUM_RESERVED_PORTS:
+				this.HandleReservedData(plnpkt)
 			default:
 				log.Fatalln("wtf", ptype, tcppktname(ptype))
 			}
@@ -609,19 +614,36 @@ func (this *TCPClient) HandleRoutingData(rpkt []byte) {
 	}
 }
 
+func (this *TCPClient) HandleReservedData(rpkt []byte) {
+	connid := rpkt[0]
+	if this.OnReservedData != nil {
+		this.OnReservedData(this.RoutingDataCbdata, 0, connid, rpkt[1:], nil)
+	}
+}
+
 func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
-	if this.cwctrlq.Len() >= 256 {
-		log.Println("Ctrl queue is full, discarding pkt...", len(data))
+	if len(data) > 2048 {
+		return nil, errors.Errorf("Data too long: %d, want: %d", len(data), 2048)
+	}
+	if len(this.cwctrlq) >= cap(this.cwctrlq) {
+		log.Println("Ctrl queue is full, drop pkt...", len(data), this.cwctrldlen)
 		return nil, errors.New("Ctrl queue is full")
 	}
 	btime := time.Now()
-	this.cwctrlq.Put(data)
-	this.cwcond.Signal()
+	select {
+	case this.cwctrlq <- data:
+		atomic.AddInt32(&this.cwctrldlen, int32(len(data)))
+	default:
+		log.Println("Ctrl queue is full, drop pkt...", len(data), this.cwctrldlen)
+		return nil, errors.New("Ctrl queue is full")
+	}
 	// encpkt, err = this.CreatePacket(buf.Bytes())
 	// this.WritePacket(encpkt)
 	dtime := time.Since(btime)
-	if dtime > 2*time.Millisecond {
+	if dtime > 5*time.Millisecond {
 		log.Fatalln("send use too long", len(data), dtime)
+	} else if dtime > 2*time.Millisecond {
+		log.Println("send use too long", len(data), dtime)
 	}
 	return
 }
@@ -631,17 +653,21 @@ func (this *TCPClient) SendDataPacket(connid uint8, data []byte) (encpkt []byte,
 	if len(data) > 2048 {
 		return nil, errors.Errorf("Data too long: %d, want: %d", len(data), 2048)
 	}
-	if this.cwdataq.Len() >= 256 {
-		log.Println("Data queue is full, discard pkt.", this.cwdataq.Len(), connid, len(data))
-		this.cwcond.Signal()
+	if len(this.cwdataq) >= cap(this.cwdataq) {
+		log.Println("Data queue is full, drop pkt.", len(this.cwdataq), connid, len(data), this.cwdatadlen)
 		return nil, errors.New("Data queue is full")
 	}
 	buf := gopp.NewBufferZero()
 	buf.WriteByte(byte(connid))
 	buf.Write(data)
 	btime := time.Now()
-	this.cwdataq.Put(buf.Bytes())
-	this.cwcond.Signal()
+	select {
+	case this.cwdataq <- buf.Bytes():
+		atomic.AddInt32(&this.cwdatadlen, int32(buf.Len()))
+	default:
+		log.Println("Data queue is full, drop pkt.", len(this.cwdataq), connid, len(data), this.cwdatadlen)
+		return nil, errors.New("Data queue is full")
+	}
 	dtime := time.Since(btime)
 	if dtime > 2*time.Millisecond {
 		log.Println("send use too long", len(data), dtime)
