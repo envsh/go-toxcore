@@ -114,7 +114,7 @@ type TCPSecureConn struct {
 
 	OnNetRecv   func(int)
 	OnClosed    func(Object)
-	OnConfirmed func()
+	OnConfirmed func(Object)
 	OnNetSent   func(int)
 }
 
@@ -127,7 +127,7 @@ type TCPServer struct {
 
 	// c's flow: accept->incomingq -> unconfirmedq -> acceptedq
 	connmu   deadlock.RWMutex
-	Conns    map[string]*TCPSecureConn // binpk =>
+	Conns    map[string]*TCPSecureConn // binsk =>
 	hsconnmu deadlock.RWMutex
 	HSConns  map[net.Conn]*TCPSecureConn
 }
@@ -186,10 +186,8 @@ func (this *TCPSecureConn) runReadLoop() {
 		gopp.Assert(wn == rn, "write ring buffer failed", rn, wn)
 		this.doReadPacket(&nxtpktlen)
 	}
-	log.Println("done.", this.Sock.RemoteAddr(), tcpstname(this.Status))
-	if this.OnClosed != nil {
-		this.OnClosed(this)
-	}
+	log.Println("read done.", this.Sock.RemoteAddr(), tcpstname(this.Status))
+	this.doClose()
 }
 func (this *TCPSecureConn) doReadPacket(nxtpktlen *uint16) {
 	stop := false
@@ -238,8 +236,10 @@ func (this *TCPSecureConn) doReadPacket(nxtpktlen *uint16) {
 			this.HandlePingRequest(plnpkt)
 			this.Status = TCP_STATUS_CONFIRMED
 			if this.OnConfirmed != nil {
-				this.OnConfirmed()
+				this.OnConfirmed(this)
 			}
+			this.LastPinged = time.Now()
+			go this.doPingLoop()
 		case this.Status == TCP_STATUS_CONFIRMED:
 			// TODO read ringbuffer
 			datlen, plnpkt, err := this.Unpacket(rdbuf)
@@ -254,6 +254,7 @@ func (this *TCPSecureConn) doReadPacket(nxtpktlen *uint16) {
 				// this.HandlePingRequest(plnpkt)
 			case ptype == TCP_PACKET_PONG:
 				// this.HandlePingResponse(plnpkt)
+				this.LastPinged = time.Now()
 			case ptype == TCP_PACKET_ROUTING_RESPONSE:
 				// this.HandleRoutingResponse(plnpkt)
 			case ptype == TCP_PACKET_CONNECTION_NOTIFICATION:
@@ -301,13 +302,16 @@ func (this *TCPSecureConn) runWriteLoop() {
 	lastLogTime := time.Now().Add(-3 * time.Second)
 	stop := false
 	for !stop {
-		data, ctrlq := []byte(nil), false
+		data, rdok, ctrlq := []byte(nil), false, false
 		select {
-		case data = <-this.cwctrlq:
+		case data, rdok = <-this.cwctrlq:
 			atomic.AddInt32(&this.cwctrldlen, -int32(len(data)))
 			ctrlq = true
-		case data = <-this.cwdataq:
+		case data, rdok = <-this.cwdataq:
 			atomic.AddInt32(&this.cwdatadlen, -int32(len(data)))
+		}
+		if !rdok && len(data) == 0 { // maybe close
+			break
 		}
 
 		var datai = []interface{}{data}
@@ -337,10 +341,52 @@ func (this *TCPSecureConn) runWriteLoop() {
 	}
 endloop:
 	log.Println("write routine done:", this.Sock.RemoteAddr())
+	this.doClose()
 }
 func (this *TCPSecureConn) SetHandshakeInfo() {
 
 }
+func (this *TCPSecureConn) doPingLoop() {
+	stop := false
+	for !stop {
+		time.Sleep(TCP_PING_FREQUENCY * time.Second / 1)
+		if int(time.Since(this.LastPinged).Seconds()) > (TCP_PING_FREQUENCY+TCP_PING_TIMEOUT)/1 {
+			log.Println("srv ping timeout:", int(time.Since(this.LastPinged).Seconds()), this.Sock.RemoteAddr())
+			break
+		}
+		pingpkt := this.MakePingPacket()
+		_, err := this.Sock.Write(pingpkt)
+		gopp.ErrPrint(err, this.Sock.RemoteAddr())
+		if err != nil {
+			break
+		}
+		this.SentNonce.Incr()
+		// this.LastPinged = time.Now()
+		// log.Println("sent ping to:", len(pingpkt), this.Sock.RemoteAddr(), this.Pingid)
+	}
+	log.Println("ping routine done:", this.Sock.RemoteAddr())
+	this.doClose()
+}
+func (this *TCPSecureConn) doClose() {
+	info := this.Sock.RemoteAddr()
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println("already closed:", info, err)
+		}
+	}()
+	this.Sock.Close()
+	close(this.cwctrlq)
+	close(this.cwdataq)
+	this.Status = TCP_STATUS_NO_STATUS
+	if this.OnClosed != nil {
+		this.OnClosed(this)
+	}
+	this.OnClosed = nil
+	this.OnConfirmed = nil
+	this.OnNetRecv = nil
+	this.OnNetSent = nil
+}
+func (this *TCPSecureConn) Close() { this.doClose() }
 
 func (this *TCPSecureConn) HandleHandshake(rdbuf []byte) {
 	cliPubkey := NewCryptoKey(rdbuf[:PUBLIC_KEY_SIZE])
@@ -433,7 +479,7 @@ func (this *TCPSecureConn) MakePingPacket() []byte {
 	pingid = gopp.IfElse(pingid == 0, uint64(1), pingid).(uint64)
 	this.Pingid = pingid
 	binary.Write(ping_plain, binary.BigEndian, pingid)
-	log.Println("ping plnpkt len:", ping_plain.Len())
+	// log.Println("ping plnpkt len:", ping_plain.Len())
 
 	encpkt, err := this.CreatePacket(ping_plain.Bytes())
 	gopp.ErrPrint(err)
@@ -520,6 +566,38 @@ func (this *TCPServer) startHandshake(c net.Conn) {
 	defer this.hsconnmu.Unlock()
 	secon := NewTCPSecureConn(c)
 	secon.Seckey = this.Seckey
+	secon.OnConfirmed = this.onConnConfirmed
+	secon.OnClosed = this.onConnClosed
 	this.HSConns[c] = secon
 	secon.Start()
+}
+func (this *TCPServer) onConnConfirmed(obj Object) {
+	c := obj.(*TCPSecureConn)
+	this.hsconnmu.Lock()
+	defer this.hsconnmu.Unlock()
+	if _, ok := this.HSConns[c.Sock]; ok {
+		delete(this.HSConns, c.Sock)
+	}
+	this.connmu.Lock()
+	defer this.connmu.Unlock()
+	if oc, ok := this.Conns[c.Pubkey.BinStr()]; ok {
+		log.Println("Already connected:", c.Pubkey.ToHex()[:20])
+		delete(this.Conns, c.Pubkey.BinStr())
+		oc.OnClosed = nil
+		oc.Close()
+	}
+	this.Conns[c.Pubkey.BinStr()] = c
+}
+func (this *TCPServer) onConnClosed(obj Object) {
+	c := obj.(*TCPSecureConn)
+	this.hsconnmu.Lock()
+	defer this.hsconnmu.Unlock()
+	if _, ok := this.HSConns[c.Sock]; ok {
+		delete(this.HSConns, c.Sock)
+	}
+	this.connmu.Lock()
+	defer this.connmu.Unlock()
+	if _, ok := this.Conns[c.Pubkey.BinStr()]; ok {
+		delete(this.Conns, c.Pubkey.BinStr())
+	}
 }

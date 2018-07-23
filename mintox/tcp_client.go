@@ -385,8 +385,8 @@ func (this *TCPClient) doReadPacket(nxtpktlen *uint16) {
 			gopp.ErrPrint(err)
 			ptype := plnpkt[0]
 			if ptype < NUM_RESERVED_PORTS {
-				log.Printf("read data pkt: rdlen:%d, datlen:%d, pktype: %d, pktname: %s\n",
-					len(rdbuf), datlen, ptype, tcppktname(ptype))
+				log.Printf("read data pkt: rdlen:%d, datlen:%d, pktype: %d, pktname: %s, from: %s\n",
+					len(rdbuf), datlen, ptype, tcppktname(ptype), this.conn.RemoteAddr().String())
 			}
 			switch {
 			case ptype == TCP_PACKET_PING:
@@ -526,7 +526,7 @@ func (this *TCPClient) MakePingPacket() []byte {
 	pingid = gopp.IfElse(pingid == 0, uint64(1), pingid).(uint64)
 	this.Pingid = pingid
 	binary.Write(ping_plain, binary.BigEndian, pingid)
-	log.Println("ping plnpkt len:", ping_plain.Len())
+	// log.Println("ping plnpkt len:", ping_plain.Len())
 
 	encpkt, err := this.CreatePacket(ping_plain.Bytes())
 	gopp.ErrPrint(err)
