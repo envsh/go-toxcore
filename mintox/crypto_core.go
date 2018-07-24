@@ -30,12 +30,21 @@ const SHA512_SIZE = 64
 
 type byteArray []byte
 
-func (this *byteArray) Bytes() []byte  { return *this }
-func (this *byteArray) BinStr() string { return string(*this) }
-func (this *byteArray) ToHex() string  { return strings.ToUpper(hex.EncodeToString(*this)) }
-func (this *byteArray) Len() int       { return len(*this) }
+type Byteable interface {
+	Bytes() []byte
+	Len() int
+}
+
+func (this *byteArray) Bytes() []byte   { return *this }
+func (this *byteArray) BinStr() string  { return string(*this) }
+func (this *byteArray) ToHex() string   { return strings.ToUpper(hex.EncodeToString(*this)) }
+func (this *byteArray) ToHex20() string { return strings.ToUpper(hex.EncodeToString(*this))[:20] }
+func (this *byteArray) Len() int        { return len(*this) }
 func (this *byteArray) Equal(that []byte) bool {
 	return len(*this) == len(that) && bytes.Compare(*this, that) == 0
+}
+func (this *byteArray) Equal2(that Byteable) bool {
+	return len(*this) == that.Len() && bytes.Compare(*this, that.Bytes()) == 0
 }
 
 type _CryptoKey [PUBLIC_KEY_SIZE]byte
