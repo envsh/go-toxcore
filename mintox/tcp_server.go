@@ -85,7 +85,7 @@ func tcppktname(ptype byte) string {
 /////////
 type PeerConnInfo struct {
 	Pubkey  *CryptoKey
-	Index   uint32 // connid
+	Index   uint32 // when use constant array, that useful
 	Status  uint8
 	Otherid uint8
 	Connid  uint8 // self
@@ -121,7 +121,8 @@ type TCPSecureConn struct {
 	OnConfirmed func(Object)
 	OnNetSent   func(int)
 
-	srvo *TCPServer
+	stopC chan bool
+	srvo  *TCPServer
 }
 
 type TCPServer struct {
@@ -138,6 +139,8 @@ type TCPServer struct {
 	HSConns  map[net.Conn]*TCPSecureConn
 }
 
+// vconn: peer0pk, peer0cid <=> peer1pk, peer1cid
+
 /////
 func NewTCPSecureConn(c net.Conn) *TCPSecureConn {
 	this := &TCPSecureConn{}
@@ -150,6 +153,7 @@ func NewTCPSecureConn(c net.Conn) *TCPSecureConn {
 	this.crbuf = buffer.NewRing(buffer.New(1024 * 1024))
 	this.cwctrlq = make(chan []byte, 64)
 	this.cwdataq = make(chan []byte, 128)
+	this.stopC = make(chan bool, 0)
 
 	return this
 }
@@ -270,8 +274,10 @@ func (this *TCPSecureConn) doReadPacket(nxtpktlen *uint16) {
 			case ptype == TCP_PACKET_CONNECTION_NOTIFICATION:
 				// this.HandleConnectionNotification(plnpkt)
 			case ptype == TCP_PACKET_DISCONNECT_NOTIFICATION:
-				// this.HandleDisconnectNotification(plnpkt)
+				this.HandleDisconnectNotification(plnpkt)
+			case ptype == TCP_PACKET_OOB_SEND: // TODO
 			case ptype == TCP_PACKET_OOB_RECV: // TODO
+			case ptype == TCP_PACKET_ONION_REQUEST: // TODO
 			case ptype == TCP_PACKET_ONION_RESPONSE: // TODO
 			case ptype >= NUM_RESERVED_PORTS:
 				this.HandleRoutingData(plnpkt)
@@ -356,13 +362,19 @@ endloop:
 func (this *TCPSecureConn) SetHandshakeInfo() {
 
 }
-func (this *TCPSecureConn) doPingLoop() {
+func (this *TCPSecureConn) doPingLoop() { // TODO this routine has delay after client closed
 	stop := false
+	tick := time.NewTicker(TCP_PING_FREQUENCY * time.Second / 1)
 	for !stop {
-		time.Sleep(TCP_PING_FREQUENCY * time.Second / 1)
-		if int(time.Since(this.LastPinged).Seconds()) > (TCP_PING_FREQUENCY+TCP_PING_TIMEOUT)/1 {
-			log.Println("srv ping timeout:", int(time.Since(this.LastPinged).Seconds()), this.Sock.RemoteAddr())
-			break
+		select {
+		case <-this.stopC:
+			goto endloop
+		case <-tick.C:
+			// time.Sleep(TCP_PING_FREQUENCY * time.Second / 1)
+			if int(time.Since(this.LastPinged).Seconds()) > (TCP_PING_FREQUENCY+TCP_PING_TIMEOUT)/1 {
+				log.Println("srv ping timeout:", int(time.Since(this.LastPinged).Seconds()), this.Sock.RemoteAddr())
+				goto endloop
+			}
 		}
 		pingpkt := this.MakePingPacket()
 		_, err := this.Sock.Write(pingpkt)
@@ -374,6 +386,7 @@ func (this *TCPSecureConn) doPingLoop() {
 		// this.LastPinged = time.Now()
 		// log.Println("sent ping to:", len(pingpkt), this.Sock.RemoteAddr(), this.Pingid)
 	}
+endloop:
 	log.Println("ping routine done:", this.Sock.RemoteAddr())
 	this.doClose()
 }
@@ -384,9 +397,7 @@ func (this *TCPSecureConn) doClose() {
 			log.Println("already closed:", info, err)
 		}
 	}()
-	this.Sock.Close()
-	close(this.cwctrlq)
-	close(this.cwdataq)
+
 	this.Status = TCP_STATUS_NO_STATUS
 	if this.OnClosed != nil {
 		this.OnClosed(this)
@@ -395,6 +406,11 @@ func (this *TCPSecureConn) doClose() {
 	this.OnConfirmed = nil
 	this.OnNetRecv = nil
 	this.OnNetSent = nil
+
+	this.Sock.Close()
+	close(this.cwctrlq)
+	close(this.cwdataq)
+	close(this.stopC)
 }
 func (this *TCPSecureConn) Close() { this.doClose() }
 
@@ -415,7 +431,7 @@ func (this *TCPSecureConn) HandleRoutingData(rpkt []byte) {
 		log.Println("peer not connect you:", peerco.Sock.RemoteAddr())
 		return
 	}
-	log.Println("src/dst connid:", connid, pci3.Connid, peerco.Sock.RemoteAddr())
+	log.Println("src/dst connid:", connid, pci3.Connid, this.Sock.RemoteAddr(), peerco.Sock.RemoteAddr())
 	_, err := peerco.SendDataPacket(pci3.Connid, rpkt[1:])
 	gopp.ErrPrint(err, connid, this.Sock.RemoteAddr(), pci3.Connid, peerco.Sock.RemoteAddr())
 }
@@ -487,9 +503,9 @@ func (this *TCPSecureConn) handleRoutingRequest(reqpkt []byte) {
 
 	///
 	this.srvo.connmu.Lock()
-	peerco, ok := this.srvo.Conns[peerpk.BinStr()]
+	peerco, ok1 := this.srvo.Conns[peerpk.BinStr()]
 	this.srvo.connmu.Unlock()
-	if ok {
+	if ok1 {
 		peerco.connmu.Lock()
 		pci2, ok2 := peerco.ConnInfos[this.Pubkey.BinStr()]
 		peerco.connmu.Unlock()
@@ -515,11 +531,32 @@ func (this *TCPSecureConn) sendRoutingResponse(connid uint8, peerpk *CryptoKey) 
 	gopp.ErrPrint(err, connid, plnpkt.Len())
 }
 
+func (this *TCPSecureConn) HandleDisconnectNotification(pkt []byte) {
+	connid := pkt[1]
+	pci0, ok0 := this.ConnInfos2[connid]
+	gopp.Assert(ok0, "", connid)
+	peerco, ok1 := this.srvo.Conns[pci0.Pubkey.BinStr()]
+	if !ok1 {
+		log.Println("peer conn not found:", pci0.Pubkey.ToHex20())
+		return
+	}
+	pci2, ok2 := peerco.ConnInfos2[pci0.Otherid]
+	if !ok2 {
+		log.Println("peer vconn not found:", pci0.Otherid)
+		return
+	}
+	peercid := pci2.Connid
+	pci2.Status = 1
+	pci2.Otherid = 0
+	pci0.Status = 1
+	pci0.Otherid = 0
+	peerco.SendDisconnectNotification(peercid)
+}
 func (this *TCPSecureConn) SendConnectNotification(connid uint8) {
 	data := []byte{TCP_PACKET_CONNECTION_NOTIFICATION, connid}
 	this.SendCtrlPacket(data)
 }
-func (this *TCPSecureConn) SendDisconnectNotification() {
+func (this *TCPSecureConn) SendDisconnectNotification(connid uint8) {
 	data := []byte{TCP_PACKET_DISCONNECT_NOTIFICATION, connid}
 	this.SendCtrlPacket(data)
 }
@@ -763,5 +800,23 @@ func (this *TCPServer) onConnClosed(obj Object) {
 	defer this.connmu.Unlock()
 	if _, ok := this.Conns[c.Pubkey.BinStr()]; ok {
 		delete(this.Conns, c.Pubkey.BinStr())
+	}
+	this.killAccepted(c)
+}
+
+func (this *TCPServer) killAccepted(c *TCPSecureConn) {
+	delbinpk := c.Pubkey.BinStr()
+	notifys := map[*TCPSecureConn]uint8{}
+	for _, ctmp := range this.Conns {
+		if pci, ok := ctmp.ConnInfos[delbinpk]; ok {
+			pci.Status = 1
+			pci.Otherid = 0
+			notifys[ctmp] = pci.Connid
+		}
+	}
+	log.Println("disconnect notify:", len(notifys))
+	for ctmp, connid := range notifys {
+		log.Println("disconnct notify...", connid, ctmp.Sock.RemoteAddr(), ctmp.Pubkey.ToHex20())
+		ctmp.SendDisconnectNotification(connid)
 	}
 }
