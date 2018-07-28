@@ -113,6 +113,8 @@ type NetworkCore struct {
 	srv *net.UDPConn
 
 	PacketHandlers map[uint8]PacketHandle
+
+	bsinfo BootstrapInfo
 }
 
 func NewNetworkCore() *NetworkCore {
