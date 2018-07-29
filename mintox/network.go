@@ -6,6 +6,12 @@ import (
 	"net"
 )
 
+const SIZE_IP4 = 4
+const SIZE_IP6 = 16
+const SIZE_IP = (1 + SIZE_IP6)
+const SIZE_PORT = 2
+const SIZE_IPPORT = (SIZE_IP + SIZE_PORT)
+
 const (
 	NET_PACKET_PING_REQUEST    = 0x00 /* Ping request packet ID. */
 	NET_PACKET_PING_RESPONSE   = 0x01 /* Ping response packet ID. */
@@ -126,7 +132,7 @@ func NewNetworkCore() *NetworkCore {
 	var srv *net.UDPConn
 	var err error
 	for i := 0; i < 100; i++ {
-		laddr.Port = 33445 - 100 + i
+		laddr.Port = 55443 - i
 		srv, err = net.ListenUDP("udp", laddr)
 		gopp.ErrPrint(err)
 		if err == nil {
