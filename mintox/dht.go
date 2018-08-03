@@ -234,7 +234,8 @@ type DHT struct {
 
 	CryptoPacketHandlers map[uint8]CryptoPacketHandle
 
-	ToBootstrap *PriorityList // [MAX_CLOSE_TO_BOOTSTRAP_NODES]*NodeFormat
+	ToBootstrap        *PriorityList // [MAX_CLOSE_TO_BOOTSTRAP_NODES]*NodeFormat
+	lastDoClosestState [6]int
 }
 
 func NewDHT() *DHT {
@@ -368,8 +369,20 @@ func (this *DHT) doClosest() {
 		this.GetNodes(item.Assoc.Addr, item.Pubkey, this.SelfPubkey)
 		sentOfFakeBS += 1
 	}
-	log.Printf("---BS:%d, FakeBS: %d, Closest: %d, need: %d, good: %d, total:%d, ---\n",
-		sentOfBS, sentOfFakeBS, sentOfClosest, len(needGetNodes), len(goodNodes), this.CloseClientList.Len())
+
+	doClosestState := [6]int{sentOfBS, sentOfFakeBS, sentOfClosest, len(needGetNodes), len(goodNodes), this.CloseClientList.Len()}
+	changed := false
+	for i, st := range doClosestState {
+		if this.lastDoClosestState[i] != st {
+			changed = true
+			break
+		}
+	}
+	if changed {
+		this.lastDoClosestState = doClosestState
+		log.Printf("---BS:%d, FakeBS: %d, Closest: %d, need: %d, good: %d, total:%d, ---\n",
+			sentOfBS, sentOfFakeBS, sentOfClosest, len(needGetNodes), len(goodNodes), this.CloseClientList.Len())
+	}
 }
 
 /* Ping each client in the "friends" list every PING_INTERVAL seconds. Send a get nodes request
@@ -433,7 +446,9 @@ func (this *DHT) doDHTFriends() {
 			}
 		}
 	})
-	log.Println("sent getnodes for friends:", this.FriendsList.Len(), n, frndid)
+	if this.FriendsList.Len() > 0 || n > 0 {
+		log.Println("sent getnodes for friends:", this.FriendsList.Len(), n, frndid)
+	}
 }
 func (this *DHT) doNAT() {
 
@@ -447,6 +462,19 @@ func (this *DHT) doHardening() {
 
 func (this *DHT) HandleGetNodes(object interface{}, addr net.Addr, data []byte, cbdata interface{}) (int, error) {
 	log.Println("Handle getnodes request:", addr.String(), len(data))
+	peerpk := NewCryptoKey(data[1 : 1+PUBLIC_KEY_SIZE])
+	nonce := NewCBNonce(data[1+PUBLIC_KEY_SIZE : 1+PUBLIC_KEY_SIZE+NONCE_SIZE])
+	log.Println("getnodes from:", peerpk.ToHex20(), nonce.ToHex20(), "have:", this.CloseClientList.Len())
+	shrkey := this.GetSharedKeyRecv(peerpk)
+	plnpkt, err := DecryptDataSymmetric(shrkey, nonce, data[1+PUBLIC_KEY_SIZE+NONCE_SIZE:])
+	gopp.ErrPrint(err)
+	searchpk := NewCryptoKey(plnpkt[0:PUBLIC_KEY_SIZE])
+	sbdata := plnpkt[PUBLIC_KEY_SIZE:]
+	gopp.Assert(len(plnpkt) == PUBLIC_KEY_SIZE+8, "Invalid packet")
+	gopp.Assert(len(sbdata) == 8, "Invalid packet")
+
+	this.sendnodes_ipv6(addr, peerpk, searchpk, sbdata, shrkey)
+
 	return 0, nil
 }
 

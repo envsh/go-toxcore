@@ -258,12 +258,13 @@ func (this *TCPSecureConn) doReadPacket(nxtpktlen *uint16) {
 			gopp.ErrPrint(err)
 			ptype := plnpkt[0]
 			if ptype < NUM_RESERVED_PORTS {
-				log.Printf("read data pkt: rdlen:%d, datlen:%d, pktype: %d, pktname: %s\n",
-					len(rdbuf), datlen, ptype, tcppktname(ptype))
+				log.Printf("read data pkt: rdlen:%d, datlen:%d, pktype: %d, pktname: %s, %s\n",
+					len(rdbuf), datlen, ptype, tcppktname(ptype), this.Sock.RemoteAddr().String())
 			}
 			switch {
 			case ptype == TCP_PACKET_PING:
-				// this.HandlePingRequest(plnpkt)
+				this.HandlePingRequest(plnpkt)
+				log.Println("resp pong:", this.Sock.RemoteAddr())
 			case ptype == TCP_PACKET_PONG:
 				// this.HandlePingResponse(plnpkt)
 				this.LastPinged = time.Now()
@@ -364,7 +365,7 @@ func (this *TCPSecureConn) SetHandshakeInfo() {
 }
 func (this *TCPSecureConn) doPingLoop() { // TODO this routine has delay after client closed
 	stop := false
-	tick := time.NewTicker(TCP_PING_FREQUENCY * time.Second / 1)
+	tick := time.NewTicker(5*time.Second + TCP_PING_FREQUENCY*time.Second/2)
 	for !stop {
 		select {
 		case <-this.stopC:
@@ -383,6 +384,7 @@ func (this *TCPSecureConn) doPingLoop() { // TODO this routine has delay after c
 			break
 		}
 		this.SentNonce.Incr()
+		log.Println("Sent ping:", this.Pingid)
 		// this.LastPinged = time.Now()
 		// log.Println("sent ping to:", len(pingpkt), this.Sock.RemoteAddr(), this.Pingid)
 	}

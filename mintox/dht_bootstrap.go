@@ -2,12 +2,21 @@ package mintox
 
 import (
 	"crypto/sha256"
+	"gopp"
 	"log"
+	"time"
 )
 
 func MainBootstrapNode() {
 	bsnodeo := NewBootstrapNode()
 	bsnodeo.Start()
+	go func() {
+		time.Sleep(3 * time.Second)
+		host, pubkeyh := bsnodes[4], bsnodes[5]
+		log.Println(host, pubkeyh)
+		err := bsnodeo.dhto.BootstrapFromAddr(host, pubkeyh)
+		gopp.ErrPrint(err)
+	}()
 	select {}
 }
 
@@ -23,7 +32,7 @@ type BootstrapNode struct {
 	tcpsrvo *TCPServer
 
 	// oniono *Onion
-	// landiso *LanDisconvery
+	// landiso *LanDiscovery
 }
 
 func NewBootstrapNode() *BootstrapNode {
@@ -34,8 +43,8 @@ func NewBootstrapNode() *BootstrapNode {
 }
 
 func (this *BootstrapNode) setInitVars() {
-	this.PORT = 54433
-	this.ports = []uint16{4433, 3389, this.PORT}
+	this.PORT = 54432
+	this.ports = []uint16{this.PORT, 4433, 3389}
 	binskca := sha256.Sum256([]byte("TODO tox bootstrap node secret key"))
 	this.seckey = NewCryptoKey(binskca[:])
 	this.pubkey = CBDerivePubkey(this.seckey)

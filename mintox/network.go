@@ -132,7 +132,7 @@ func NewNetworkCore() *NetworkCore {
 	var srv *net.UDPConn
 	var err error
 	for i := 0; i < 100; i++ {
-		laddr.Port = 55443 - i
+		laddr.Port = 54432 - i
 		srv, err = net.ListenUDP("udp", laddr)
 		gopp.ErrPrint(err)
 		if err == nil {
@@ -168,8 +168,9 @@ func (this *NetworkCore) doPoll(cbdata interface{}) {
 		switch int(rdbuf[0]) {
 		case NET_PACKET_SEND_NODES_IPV6:
 		default:
-			log.Println("recv UDP pkt:", rn, raddr.String(), pktname)
+			log.Println("recv UDP pkt:", rn, pktname, raddr.String())
 		}
+
 		h, ok := this.PacketHandlers[rdbuf[0]]
 		if !ok || h.Func == nil {
 			log.Println("Packet has no handler:", pktname)
