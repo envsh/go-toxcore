@@ -27,6 +27,7 @@ const SHARED_KEY_SIZE = 32
 const NONCE_SIZE = 24
 const MAC_SIZE = 16
 const SHA512_SIZE = 64
+const SHA256_SIZE = SHA512_SIZE / 2
 
 type byteArray []byte
 

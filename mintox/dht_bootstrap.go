@@ -12,10 +12,16 @@ func MainBootstrapNode() {
 	bsnodeo.Start()
 	go func() {
 		time.Sleep(3 * time.Second)
-		host, pubkeyh := bsnodes[4], bsnodes[5]
+		host, pubkeyh := bsnodes[6], bsnodes[7]
 		log.Println(host, pubkeyh)
 		err := bsnodeo.dhto.BootstrapFromAddr(host, pubkeyh)
 		gopp.ErrPrint(err)
+		{
+			host, pubkeyh := bsnodes[8], bsnodes[9]
+			log.Println(host, pubkeyh)
+			err := bsnodeo.dhto.BootstrapFromAddr(host, pubkeyh)
+			gopp.ErrPrint(err)
+		}
 	}()
 	select {}
 }
@@ -32,6 +38,7 @@ type BootstrapNode struct {
 	tcpsrvo *TCPServer
 
 	// oniono *Onion
+	onionao *Onion_Announce
 	// landiso *LanDiscovery
 }
 
@@ -57,6 +64,7 @@ func (this *BootstrapNode) Start() {
 	this.dhto = NewDHT()
 	this.dhto.SetKeyPair(this.pubkey, this.seckey)
 	// onion
+	this.onionao = NewOnionAnnounce(this.dhto)
 
 	this.dhto.Neto.BootstrapSetCallback(1, "This is a test motd of pgobs")
 

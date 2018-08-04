@@ -464,7 +464,7 @@ func (this *DHT) HandleGetNodes(object interface{}, addr net.Addr, data []byte, 
 	log.Println("Handle getnodes request:", addr.String(), len(data))
 	peerpk := NewCryptoKey(data[1 : 1+PUBLIC_KEY_SIZE])
 	nonce := NewCBNonce(data[1+PUBLIC_KEY_SIZE : 1+PUBLIC_KEY_SIZE+NONCE_SIZE])
-	log.Println("getnodes from:", peerpk.ToHex20(), nonce.ToHex20(), "have:", this.CloseClientList.Len())
+	log.Println("getnodes from:", peerpk.ToHex20(), nonce.ToHex20(), "have:", this.CloseClientList.Len(), addr)
 	shrkey := this.GetSharedKeyRecv(peerpk)
 	plnpkt, err := DecryptDataSymmetric(shrkey, nonce, data[1+PUBLIC_KEY_SIZE+NONCE_SIZE:])
 	gopp.ErrPrint(err)
@@ -685,8 +685,8 @@ func (this *DHT) GetSharedKey(shrkeys map[string]*SharedKey, pubkey *CryptoKey) 
  *  return 1 if pk1 is closer.
  *  return 2 if pk2 is closer.
  */
-func IDClosest(pk *CryptoKey, pk1 *CryptoKey, pk2 *CryptoKey) int {
-	pkb, pk1b, pk2b := pk.Bytes(), pk1.Bytes(), pk2.Bytes()
+func IDClosest(cmppk *CryptoKey, pk1 *CryptoKey, pk2 *CryptoKey) int {
+	pkb, pk1b, pk2b := cmppk.Bytes(), pk1.Bytes(), pk2.Bytes()
 	for i := 0; i < PUBLIC_KEY_SIZE; i++ {
 
 		distance1 := pkb[i] ^ pk1b[i]

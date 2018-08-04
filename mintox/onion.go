@@ -1,6 +1,7 @@
 package mintox
 
 import (
+	"gopp"
 	"net"
 	"time"
 )
@@ -218,7 +219,12 @@ func (this *Onion) SendPacket(path *OnionPath, dest net.Addr, data []byte) error
  * return 0 on success.
  */
 // int send_onion_response(Networking_Core *net, IP_Port dest, const uint8_t *data, uint16_t length, const uint8_t *ret);
-func (this *Onion) SendResponse(dest net.Addr, data []byte) (ret []byte, err error) {
+func (this *NetworkCore) SendOnionResponse(dest net.Addr, data []byte, retdat []byte) (err error) {
+	buf := gopp.NewBufferZero()
+	buf.WriteByte(NET_PACKET_ONION_RECV_3)
+	buf.Write(retdat)
+	buf.Write(data)
+	_, err = this.srv.WriteTo(buf.Bytes(), dest)
 	return
 }
 

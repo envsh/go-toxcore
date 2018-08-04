@@ -168,7 +168,7 @@ func (this *NetworkCore) doPoll(cbdata interface{}) {
 		switch int(rdbuf[0]) {
 		case NET_PACKET_SEND_NODES_IPV6:
 		default:
-			log.Println("recv UDP pkt:", rn, pktname, raddr.String())
+			log.Printf("recv UDP pkt: %v, 0x%x, %v, %s, %v\n", rn, rdbuf[0], rdbuf[0], pktname, raddr)
 		}
 
 		h, ok := this.PacketHandlers[rdbuf[0]]
