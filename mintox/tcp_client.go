@@ -1,20 +1,24 @@
 package mintox
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"gopp"
 	"io"
 	"log"
 	"math/rand"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 
 	"github.com/djherbis/buffer"
 	"github.com/pkg/errors"
+	funk "github.com/thoas/go-funk"
 )
 
 const (
@@ -75,6 +79,31 @@ func ServerHandshakeFrom(encpkt []byte, shrkey *CryptoKey) *ServerHandshake {
 	return nil
 }
 
+type PeekableRing struct {
+	*bufio.Reader
+	buf_ buffer.Buffer
+}
+
+func (this *PeekableRing) Write(p []byte) (int, error) { return this.buf_.Write(p) }
+func (this *PeekableRing) Size() int64                 { return this.Len() }
+func (this *PeekableRing) Len() int64 {
+	rd := this.Reader
+	n := int64(rd.Buffered()) + this.buf_.Len()
+	return n
+}
+func (this *PeekableRing) Cap() int64 {
+	rd := this.Reader
+	n := int64(rd.Size()) + this.buf_.Cap()
+	return n
+}
+func NewPeekableRing(b buffer.Buffer) *PeekableRing {
+	this := &PeekableRing{}
+	b = buffer.New(1024 * 1024)
+	this.buf_ = b
+	this.Reader = bufio.NewReader(bufio.NewReader(b))
+	return this
+}
+
 type TCPClient struct {
 	Status   uint8
 	ServAddr string
@@ -105,12 +134,16 @@ type TCPClient struct {
 	}
 
 	conn       net.Conn
-	crbuf      buffer.Buffer // conn read ring buffer
+	crbuf_     buffer.Buffer // conn read ring buffer
+	crbuf      *PeekableRing // crbuf with peek
 	cwctrlq    chan []byte   // ctrl packets like pong []byte
 	cwctrldlen int32         // data length of cwctrlq
 	cwdataq    chan []byte
 	cwdatadlen int32  // data length of cwdataq
 	conns      *BiMap // connid uint8 <=> pkbinstr
+
+	hs2tmer *time.Timer
+	hs2done bool
 
 	RoutingResponseFunc   func(object Object, connection_id uint8, pubkey *CryptoKey)
 	RoutingResponseCbdata Object
@@ -159,16 +192,7 @@ func NewTCPClient(serv_addr string, serv_pubkey, self_pubkey, self_seckey *Crypt
 
 	this.conns = NewBiMap()
 
-	go func() {
-		err := this.connect()
-		if err == nil {
-			this.SendHandshake()
-		} else {
-			if this.OnClosed != nil {
-				this.OnClosed(this)
-			}
-		}
-	}()
+	go this.doinit()
 	return this
 }
 
@@ -188,7 +212,21 @@ func (this *TCPClient) SetKeyPair(pubkey, seckey *CryptoKey) {
 	gopp.ErrPrint(err)
 }
 
+// should block
+func (this *TCPClient) doinit() {
+	err := this.connect()
+	gopp.ErrPrint(err)
+	if err == nil {
+		err = this.SendHandshake()
+		gopp.ErrPrint(err, this.ServAddr)
+	} else {
+		if this.OnClosed != nil {
+			this.OnClosed(this)
+		}
+	}
+}
 func (this *TCPClient) connect() error {
+	btime := time.Now()
 	this.Status = TCP_CLIENT_CONNECTING
 	c, err := net.Dial("tcp", this.ServAddr)
 	gopp.ErrPrint(err, this.ServAddr)
@@ -198,14 +236,15 @@ func (this *TCPClient) connect() error {
 	tcpc := c.(*net.TCPConn)
 	err = tcpc.SetWriteBuffer(128 * 1024)
 	gopp.ErrPrint(err)
-	log.Println("Connected to:", c.RemoteAddr(), err)
+	log.Println("Connected to:", c.RemoteAddr(), err, gopp.SinceHum(btime))
 
 	this.conn = c
-	this.crbuf = buffer.NewRing(buffer.New(1024 * 1024))
+	this.crbuf_ = buffer.NewRing(buffer.New(1024 * 1024))
+	this.crbuf = NewPeekableRing(this.crbuf_)
 	this.cwctrlq = make(chan []byte, 32)
 	this.cwdataq = make(chan []byte, 128)
 
-	this.start()
+	go this.runmainproc()
 	return nil
 }
 
@@ -217,13 +256,28 @@ func (this *TCPClient) Close() error {
 	return errors.Errorf("Not connected: %s", this.ServAddr)
 }
 
-func (this *TCPClient) start() {
-	go this.doWriteConn()
-	go this.doReadConn()
+func (this *TCPClient) runmainproc() {
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	go func() {
+		err := this.doWriteConn()
+		gopp.ErrPrint(err, this.ServAddr)
+		wg.Done()
+	}()
+	go func() {
+		err := this.doReadConn()
+		gopp.ErrPrint(err, this.ServAddr)
+		wg.Done()
+	}()
+
+	wg.Wait()
+	log.Println("client proc done", this.ServAddr)
 }
-func (this *TCPClient) doWriteConn() {
+func (this *TCPClient) doWriteConn() error {
 	spdc := NewSpeedCalc()
 
+	var rerr error
 	flushCtrl := func() error {
 		for len(this.cwctrlq) > 0 {
 			data := <-this.cwctrlq
@@ -259,6 +313,7 @@ func (this *TCPClient) doWriteConn() {
 		wn, err := this.WritePacket(datai[0].([]byte))
 		gopp.ErrPrint(err, wn, this.ServAddr)
 		if err != nil {
+			rerr = err
 			goto endloop
 		}
 		spdc.Data(wn)
@@ -270,11 +325,12 @@ func (this *TCPClient) doWriteConn() {
 			err = flushCtrl()
 			gopp.ErrPrint(err)
 			if err != nil {
+				rerr = err
 				goto endloop
 			}
 		}
 
-		if int(time.Since(lastLogTime).Seconds()) >= 1 {
+		if false && int(time.Since(lastLogTime).Seconds()) >= 1 {
 			lastLogTime = time.Now()
 			log.Printf("------- async wrote ----- spd: %d, %s, pq:%d, cq:%d------\n",
 				spdc.Avgspd, this.ServAddr, len(this.cwctrlq), len(this.cwdataq))
@@ -282,15 +338,16 @@ func (this *TCPClient) doWriteConn() {
 	}
 endloop:
 	log.Println("write routine done:", this.ServAddr)
+	return rerr
 }
-func (this *TCPClient) doReadConn() {
+func (this *TCPClient) doReadConn() error {
 	lastLogTime := time.Now().Add(-3 * time.Second)
 	spdc := NewSpeedCalc()
-	var nxtpktlen uint16
+	var rerr error
 	stop := false
 	for !stop {
 		c := this.conn
-		if int(time.Since(lastLogTime).Seconds()) >= 1 {
+		if false && int(time.Since(lastLogTime).Seconds()) >= 1 {
 			lastLogTime = time.Now()
 			log.Printf("------- async reading... ----- spd: %d, %s ------\n", spdc.Avgspd, this.ServAddr)
 		}
@@ -301,11 +358,12 @@ func (this *TCPClient) doReadConn() {
 			this.Status = TCP_CLIENT_DISCONNECTED
 		}
 		if err != nil {
+			rerr = err
 			break
 		}
 		rdbuf = rdbuf[:rn]
 		if rn < 1 {
-			log.Println("Invalid packet:", rn, this.ServAddr)
+			rerr = fmt.Errorf("Invalid packet, pktlen too short, %v %v", rn, this.ServAddr)
 			break
 		}
 
@@ -318,58 +376,79 @@ func (this *TCPClient) doReadConn() {
 		wn, err := this.crbuf.Write(rdbuf)
 		gopp.ErrPrint(err)
 		gopp.Assert(wn == rn, "write ring buffer failed", rn, wn)
-		this.doReadPacket(&nxtpktlen)
+		err = this.doReadPacket()
+		gopp.ErrPrint(err)
 	}
 	log.Println("tcp client done.", this.ServAddr, tcpstname(this.Status))
 	if this.OnClosed != nil {
 		this.OnClosed(this)
 	}
+	return rerr
 }
-func (this *TCPClient) doReadPacket(nxtpktlen *uint16) {
+func (this *TCPClient) doReadPacket() error {
 	stop := false
 	for !stop {
 		var rdbuf []byte
 		switch {
 		case this.Status == TCP_CLIENT_CONNECTING:
 			// handshake response packet
-			*nxtpktlen = NONCE_SIZE + (PUBLIC_KEY_SIZE + NONCE_SIZE + MAC_SIZE)
-			rdbuf = make([]byte, *nxtpktlen)
+			pktlen := NONCE_SIZE + (PUBLIC_KEY_SIZE + NONCE_SIZE + MAC_SIZE)
+			rdbuf = make([]byte, pktlen)
+			rn, err := this.crbuf.Read(rdbuf)
+			gopp.ErrPrint(err, rn)
+			gopp.Assert(rn == cap(rdbuf), "not read enough data", rn, cap(rdbuf), this.crbuf.Len())
+		case this.Status == TCP_CLIENT_UNCONFIRMED || this.Status == TCP_CLIENT_CONFIRMED:
+			// length+payload
+			u16sz := int(unsafe.Sizeof(uint16(0)))
+			pktlenbuf, err := this.crbuf.Peek(u16sz)
+			if err != nil {
+				if err == io.EOF {
+					// log.Println("no data header 2B", this.crbuf.Len())
+					return nil
+				} else {
+					gopp.ErrPrint(err, this.crbuf.Len())
+					return err
+				}
+			}
+			var pktlen uint16
+			err = binary.Read(bytes.NewBuffer(pktlenbuf), binary.BigEndian, &pktlen)
+			gopp.ErrPrint(err)
+			_, err = this.crbuf.Peek(u16sz + int(pktlen))
+			if err != nil {
+				if err == io.EOF {
+					log.Printf("no enough data, want %d, have %d", pktlen, this.crbuf.Len())
+					return nil
+				} else {
+					gopp.ErrPrint(err, this.crbuf.Len())
+					return err
+				}
+			}
+			rdbuf = make([]byte, u16sz+int(pktlen))
 			rn, err := this.crbuf.Read(rdbuf)
 			gopp.ErrPrint(err)
 			gopp.Assert(rn == cap(rdbuf), "not read enough data", rn, cap(rdbuf))
-		case this.Status == TCP_CLIENT_UNCONFIRMED || this.Status == TCP_CLIENT_CONFIRMED:
-			// length+payload
-			if *nxtpktlen == 0 && this.crbuf.Len() < int64(unsafe.Sizeof(uint16(0))) {
-				return
-			}
-			if *nxtpktlen == 0 && this.crbuf.Len() >= int64(unsafe.Sizeof(uint16(0))) {
-				pktlenbuf := make([]byte, 2)
-				rn, err := this.crbuf.Read(pktlenbuf)
-				gopp.ErrPrint(err, rn)
-				err = binary.Read(bytes.NewBuffer(pktlenbuf), binary.BigEndian, nxtpktlen)
-				gopp.ErrPrint(err)
-			}
-			if this.crbuf.Len() < int64(*nxtpktlen) {
-				return
-			}
-			rdbuf = make([]byte, 2+*nxtpktlen)
-			binary.Write(gopp.NewBufferBuf(rdbuf), binary.BigEndian, *nxtpktlen)
-			rn, err := this.crbuf.Read(rdbuf[2:])
-			gopp.ErrPrint(err)
-			gopp.Assert(rn+2 == cap(rdbuf), "not read enough data", rn+2, cap(rdbuf))
+
 		}
-		*nxtpktlen = 0
 
 		switch {
 		case this.Status == TCP_CLIENT_CONNECTING:
 			this.HandleHandshake(rdbuf)
 			// ping
-			ping_pkt := this.MakePingPacket()
-			wn, err := this.conn.Write(ping_pkt)
+			pingpkt := this.MakePingPacket()
+			wn, err := this.conn.Write(pingpkt)
 			gopp.ErrPrint(err, wn)
 			this.SentNonce.Incr()
 			this.Status = TCP_CLIENT_UNCONFIRMED
+			this.hs2tmer = time.NewTimer(5 * time.Second)
+			go func() {
+				<-this.hs2tmer.C
+				if this.hs2done {
+				} else {
+					log.Println("handshake 2 timeout", this.ServAddr)
+				}
+			}()
 		case this.Status == TCP_CLIENT_UNCONFIRMED:
+			this.hs2tmer.Stop()
 			datlen, plnpkt, err := this.Unpacket(rdbuf)
 			gopp.ErrPrint(err)
 			ptype := plnpkt[0]
@@ -384,7 +463,8 @@ func (this *TCPClient) doReadPacket(nxtpktlen *uint16) {
 			datlen, plnpkt, err := this.Unpacket(rdbuf)
 			gopp.ErrPrint(err)
 			ptype := plnpkt[0]
-			if ptype < NUM_RESERVED_PORTS {
+			omitys := []byte{TCP_PACKET_PING}
+			if ptype < NUM_RESERVED_PORTS && !funk.Contains(omitys, ptype) {
 				log.Printf("read data pkt: rdlen:%d, datlen:%d, pktype: %d, pktname: %s, from: %s\n",
 					len(rdbuf), datlen, ptype, tcppktname(ptype), this.conn.RemoteAddr().String())
 			}
@@ -412,6 +492,7 @@ func (this *TCPClient) doReadPacket(nxtpktlen *uint16) {
 			log.Fatalln("wtf", tcpstname(this.Status))
 		}
 	}
+	return nil
 }
 
 func (this *TCPClient) DoHandshake() {
@@ -514,8 +595,8 @@ func (this *TCPClient) HandleHandshake(rdbuf []byte) {
 	log.Println("this.recv_nonce", this.RecvNonce.ToHex())
 	this.Shrkey, err = CBBeforeNm(temp_pubkey, this.TempSeckey)
 	gopp.ErrPrint(err)
-	this.TempSeckey = nil           // handshake done, have new shrkey, free
-	log.Println("handshake 1 done") // handshake 2 is confirm
+	this.TempSeckey = nil                          // handshake done, have new shrkey, free
+	log.Println("handshake 1 done", this.ServAddr) // handshake 2 is confirm
 }
 
 func (this *TCPClient) MakePingPacket() []byte {
@@ -555,7 +636,7 @@ func (this *TCPClient) HandlePingResponse(rpkt []byte) {
 	pingid := this.Pingid
 	log.Println(pongid == pingid, pongid, pingid)
 	atomic.CompareAndSwapUint64(&this.Pingid, pongid, 0)
-	log.Println("handshake 2 done. confirmed.")
+	log.Println("handshake 2 done. confirmed.", this.ServAddr)
 }
 
 func (this *TCPClient) HandlePingRequest(rpkt []byte) {
@@ -570,18 +651,19 @@ func (this *TCPClient) HandlePingRequest(rpkt []byte) {
 	// gopp.ErrPrint(err, wn)
 }
 
-func (this *TCPClient) ConnectPeer(pubkey string) {
+func (this *TCPClient) ConnectPeer(pubkey string) error {
 	c := this.conn
 	if c == nil {
-		return
+		return fmt.Errorf("Not connected %s", this.ServAddr)
 	}
 	if this.Status != TCP_CLIENT_CONFIRMED {
-		return
+		return fmt.Errorf("Connection not confirmed %s", this.ServAddr)
 	}
 
 	// routing request
 	encpkt, err := this.SendRoutingRequest(NewCryptoKeyFromHex(pubkey))
 	gopp.ErrPrint(err, len(encpkt))
+	return err
 }
 
 func (this *TCPClient) SendRoutingRequest(pubkey *CryptoKey) (encpkt []byte, err error) {
@@ -670,7 +752,7 @@ func (this *TCPClient) SendDataPacket(connid uint8, data []byte) (encpkt []byte,
 	}
 	dtime := time.Since(btime)
 	if dtime > 2*time.Millisecond {
-		log.Println("send use too long", len(data), dtime)
+		log.Println("send use too long time", len(data), dtime)
 	}
 	return
 }
