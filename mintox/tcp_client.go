@@ -17,7 +17,9 @@ import (
 	"unsafe"
 
 	"github.com/djherbis/buffer"
-	"github.com/pkg/errors"
+	"github.com/goph/emperror"
+
+	// "github.com/pkg/errors"
 	funk "github.com/thoas/go-funk"
 )
 
@@ -121,11 +123,9 @@ type TCPClient struct {
 
 	KillAt    time.Time
 	LastPined uint64
-	Pingid    uint64
 	PingDoneC chan struct{}
 
-	PingResponseId uint64
-	PingRequestId  uint64
+	PingRequestId uint64
 
 	// peer connections via this relay tcp tunnel
 	Conns [NUM_CLIENT_CONNECTIONS]struct {
@@ -256,10 +256,13 @@ func (this *TCPClient) connect() error {
 
 func (this *TCPClient) Close() error {
 	if this.conn != nil {
-		err := errors.Wrap(this.conn.Close(), this.ServAddr)
+		err := this.conn.Close()
+		if err != nil {
+			err = emperror.With(err, this.ServAddr)
+		}
 		return err
 	}
-	return errors.Errorf("Not connected: %s", this.ServAddr)
+	return emperror.With(fmt.Errorf("Not connected: %s", this.ServAddr))
 }
 
 func (this *TCPClient) runmainproc() {
@@ -277,6 +280,7 @@ func (this *TCPClient) runmainproc() {
 		err := this.doReadConn()
 		gopp.ErrPrint(err, this.ServAddr)
 		close(this.cwctrlq)
+		close(this.cwdataq)
 		wg.Done()
 	}()
 
@@ -291,6 +295,11 @@ func (this *TCPClient) runmainproc() {
 }
 func (this *TCPClient) doPing() error {
 	log.Println("our ping proc started", this.ServAddr)
+	// first ping after confirmed
+	pingpkt := this.MakePingPacket2()
+	_, err := this.SendCtrlPacket(pingpkt)
+	gopp.ErrPrint(err)
+
 	for {
 		select {
 		case <-this.PingDoneC:
@@ -470,7 +479,7 @@ func (this *TCPClient) doReadPacket() error {
 		case this.Status == TCP_CLIENT_CONNECTING:
 			this.HandleHandshake(rdbuf)
 			// ping
-			pingpkt := this.MakePingPacket()
+			pingpkt := this.CreatePingPacket()
 			wn, err := this.conn.Write(pingpkt)
 			gopp.ErrPrint(err, wn)
 			this.SentNonce.Incr()
@@ -561,7 +570,7 @@ func (this *TCPClient) DoHandshake() {
 	this.HandleHandshake(rdbuf)
 
 	// ping
-	ping_pkt := this.MakePingPacket()
+	ping_pkt := this.CreatePingPacket()
 	wn, err = c.Write(ping_pkt)
 	gopp.ErrPrint(err, wn)
 
@@ -640,64 +649,53 @@ func (this *TCPClient) HandleHandshake(rdbuf []byte) {
 	log.Println("handshake 1 done", this.ServAddr) // handshake 2 is confirm
 }
 
-func (this *TCPClient) MakePingPacket() []byte {
+func (this *TCPClient) CreatePingPacket() []byte {
 	/// first ping
-	ping_plain := gopp.NewBufferZero()
-	ping_plain.WriteByte(byte(TCP_PACKET_PING))
-	pingid := rand.Uint64()
-	pingid = gopp.IfElse(pingid == 0, uint64(1), pingid).(uint64)
-	this.Pingid = pingid
-	binary.Write(ping_plain, binary.BigEndian, pingid)
-	// log.Println("ping plnpkt len:", ping_plain.Len())
-
-	encpkt, err := this.CreatePacket(ping_plain.Bytes())
+	pingpkt := this.MakePingPacket2()
+	encpkt, err := this.CreatePacket(pingpkt)
 	gopp.ErrPrint(err)
-
-	if false {
-		ping_encrypted, err := EncryptDataSymmetric(this.Shrkey, this.SentNonce, ping_plain.Bytes())
-		gopp.ErrPrint(err)
-
-		ping_pkt := gopp.NewBufferZero()
-		binary.Write(ping_pkt, binary.BigEndian, uint16(len(ping_encrypted)))
-		ping_pkt.Write(ping_encrypted)
-		log.Println(ping_pkt.Len(), len(ping_encrypted))
-		return ping_pkt.Bytes()
-	}
 
 	return encpkt
 }
 
 func (this *TCPClient) MakePingPacket2() []byte {
 	/// first ping
-	ping_plain := gopp.NewBufferZero()
-	ping_plain.WriteByte(byte(TCP_PACKET_PING))
-	this.Pingid++
-	pingid := this.Pingid
+	pingpkt := gopp.NewBufferZero()
+	pingpkt.WriteByte(byte(TCP_PACKET_PING))
+	pingid := rand.Uint64()
 	pingid = gopp.IfElse(pingid == 0, uint64(1), pingid).(uint64)
-	binary.Write(ping_plain, binary.BigEndian, pingid)
+	this.PingRequestId = pingid
+	binary.Write(pingpkt, binary.BigEndian, pingid)
 	// log.Println("ping plnpkt len:", ping_plain.Len())
-	return ping_plain.Bytes()
+	return pingpkt.Bytes()
 }
 
 func (this *TCPClient) HandlePingResponse(rpkt []byte) {
-	pong_pkt := gopp.NewBufferBuf(rpkt)
+	pongpkt := gopp.NewBufferBuf(rpkt)
 	var pongid uint64
-	err := binary.Read(pong_pkt.RBufAt(1), binary.BigEndian, &pongid)
+	err := binary.Read(pongpkt.RBufAt(1), binary.BigEndian, &pongid)
 	gopp.ErrPrint(err)
 
-	pingid := this.Pingid
-	log.Println(pongid == pingid, pongid, pingid)
-	atomic.CompareAndSwapUint64(&this.Pingid, pongid, 0)
+	gopp.Assert(pongid == this.PingRequestId, "Invalid pongid")
+	// atomic.CompareAndSwapUint64(&this.Pingid, pongid, 0)
 	log.Println("handshake 2 done. confirmed.", this.ServAddr)
+	this.PingRequestId = 0
 }
 
-func (this *TCPClient) HandlePingResponse2(rpkt []byte) {
+func (this *TCPClient) HandlePingResponse2(rpkt []byte) error {
 	pong_pkt := gopp.NewBufferBuf(rpkt)
 	// log.Println("pong type:", gopp.Retn(pong_pkt.ReadByte()))
 	var pongid uint64
 	err := binary.Read(pong_pkt.RBufAt(1), binary.BigEndian, &pongid)
 	gopp.ErrPrint(err)
-	gopp.Assert(pongid == this.Pingid, "Invalid pongid", pongid, this.Pingid)
+
+	if pongid != this.PingRequestId {
+		err := fmt.Errorf("Invalid pongid %d %d", pongid, this.PingRequestId)
+		log.Println(err)
+		return err
+	}
+	this.PingRequestId = 0
+	return nil
 }
 
 func (this *TCPClient) HandlePingRequest(rpkt []byte) {
@@ -768,11 +766,14 @@ func (this *TCPClient) HandleReservedData(rpkt []byte) {
 
 func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
 	if len(data) > 2048 {
-		return nil, errors.Errorf("Data too long: %d, want: %d", len(data), 2048)
+		return nil, emperror.With(fmt.Errorf("Data too long: %d, want: %d", len(data), 2048))
 	}
 	if len(this.cwctrlq) >= cap(this.cwctrlq) {
 		log.Println("Ctrl queue is full, drop pkt...", len(data), this.cwctrldlen)
-		return nil, errors.New("Ctrl queue is full")
+		return nil, emperror.With(fmt.Errorf("Ctrl queue is full"))
+	}
+	if this.Status != TCP_CLIENT_CONFIRMED {
+		return nil, emperror.With(fmt.Errorf("Cannot send data status is %d", this.Status))
 	}
 	btime := time.Now()
 	select {
@@ -780,7 +781,7 @@ func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
 		atomic.AddInt32(&this.cwctrldlen, int32(len(data)))
 	default:
 		log.Println("Ctrl queue is full, drop pkt...", len(data), this.cwctrldlen)
-		return nil, errors.New("Ctrl queue is full")
+		return nil, emperror.With(fmt.Errorf("Ctrl queue is full"))
 	}
 	// encpkt, err = this.CreatePacket(buf.Bytes())
 	// this.WritePacket(encpkt)
@@ -796,11 +797,14 @@ func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
 // TODO split data
 func (this *TCPClient) SendDataPacket(connid uint8, data []byte) (encpkt []byte, err error) {
 	if len(data) > 2048 {
-		return nil, errors.Errorf("Data too long: %d, want: %d", len(data), 2048)
+		return nil, emperror.With(fmt.Errorf("Data too long: %d, want: %d", len(data), 2048))
 	}
 	if len(this.cwdataq) >= cap(this.cwdataq) {
 		log.Println("Data queue is full, drop pkt.", len(this.cwdataq), connid, len(data), this.cwdatadlen)
-		return nil, errors.New("Data queue is full")
+		return nil, emperror.With(fmt.Errorf("Data queue is full"))
+	}
+	if this.Status != TCP_CLIENT_CONFIRMED {
+		return nil, emperror.With(fmt.Errorf("Cannot send data status is %d", this.Status))
 	}
 	buf := gopp.NewBufferZero()
 	buf.WriteByte(byte(connid))
@@ -811,7 +815,7 @@ func (this *TCPClient) SendDataPacket(connid uint8, data []byte) (encpkt []byte,
 		atomic.AddInt32(&this.cwdatadlen, int32(buf.Len()))
 	default:
 		log.Println("Data queue is full, drop pkt.", len(this.cwdataq), connid, len(data), this.cwdatadlen)
-		return nil, errors.New("Data queue is full")
+		return nil, emperror.With(fmt.Errorf("Data queue is full"))
 	}
 	dtime := time.Since(btime)
 	if dtime > 2*time.Millisecond {

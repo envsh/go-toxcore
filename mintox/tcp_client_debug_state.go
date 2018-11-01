@@ -54,6 +54,7 @@ func (this *TcpClientDebugState) RecvPkt(plnpkt []byte) {
 
 func (this *TcpClientDebugState) Dump() {
 	log.Println("ConnUsed:", gopp.Dur2hum(this.ConnUsed))
+	log.Println("Handshake2Begin:", this.Handshake2Begin_)
 	log.Println("Handshake2Used:", gopp.Dur2hum(this.Handshake2Used))
 	log.Println("LastRecvPing:", gopp.SinceHum(this.LastRecvPing))
 	log.Println("LastRecvPong:", gopp.SinceHum(this.LastRecvPong))
