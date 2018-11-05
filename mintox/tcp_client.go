@@ -248,7 +248,7 @@ func (this *TCPClient) connect() error {
 	this.crbuf_ = buffer.NewRing(buffer.New(1024 * 1024))
 	this.crbuf = NewPeekableRing(this.crbuf_)
 	this.cwctrlq = make(chan []byte, 32)
-	this.cwdataq = make(chan []byte, 128)
+	this.cwdataq = make(chan []byte, 2128) // TODO 如果每次1k的话，这个缓存就太小了
 
 	go this.runmainproc()
 	return nil
@@ -353,6 +353,19 @@ func (this *TCPClient) doWriteConn() error {
 			goto endloop
 		}
 
+		if !ctrlq {
+			// log.Println("sending ctrl pkt", len(this.cwctrlq), this.ServAddr)
+			err := flushCtrl()
+			gopp.ErrPrint(err)
+			if err != nil {
+				rerr = err
+				goto endloop
+			}
+		}
+		if ctrlq {
+			// log.Println("sending ctrl pkt", len(this.cwctrlq), this.ServAddr)
+		}
+
 		var datai = []interface{}{data}
 		wn, err := this.WritePacket(datai[0].([]byte))
 		gopp.ErrPrint(err, wn, this.ServAddr)
@@ -365,18 +378,6 @@ func (this *TCPClient) doWriteConn() error {
 			this.OnNetSent(wn)
 		}
 		// gopp.Assert(wn == len(datai[0].([]byte)), "write lost", wn, len(datai[0].([]byte)), this.ServAddr)
-		if !ctrlq {
-			// log.Println("sending ctrl pkt", len(this.cwctrlq), this.ServAddr)
-			err = flushCtrl()
-			gopp.ErrPrint(err)
-			if err != nil {
-				rerr = err
-				goto endloop
-			}
-		}
-		if ctrlq {
-			// log.Println("sending ctrl pkt", len(this.cwctrlq), this.ServAddr)
-		}
 
 		if false && int(time.Since(lastLogTime).Seconds()) >= 1 {
 			lastLogTime = time.Now()
@@ -799,7 +800,8 @@ func (this *TCPClient) SendDataPacket(connid uint8, data []byte) (encpkt []byte,
 	if len(data) > 2048 {
 		return nil, emperror.With(fmt.Errorf("Data too long: %d, want: %d", len(data), 2048))
 	}
-	if len(this.cwdataq) >= cap(this.cwdataq) {
+	// if len(this.cwdataq) >= cap(this.cwdataq) {
+	if this.cwdatadlen > 1024*1024 {
 		log.Println("Data queue is full, drop pkt.", len(this.cwdataq), connid, len(data), this.cwdatadlen)
 		return nil, emperror.With(fmt.Errorf("Data queue is full"))
 	}
