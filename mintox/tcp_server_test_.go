@@ -39,7 +39,7 @@ func test_tcp_server() {
 		cli.RoutingResponseFunc = func(obj Object, connid uint8, pubkey *CryptoKey) {
 			sntdat := gopp.RandomStringPrintable(123)
 			log.Println(connid, pubkey.ToHex20(), sntdat[:30])
-			_, err := cli.SendDataPacket(connid, []byte(sntdat))
+			_, err := cli.SendDataPacket(connid, []byte(sntdat), false)
 			gopp.ErrPrint(err)
 		}
 		cli.RoutingDataFunc = func(obj Object, num uint32, connid uint8, data []byte, cbdata Object) {

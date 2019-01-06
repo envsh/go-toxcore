@@ -25,7 +25,7 @@ func test_tcp_client() {
 				for i := 0; i < 1000000; i++ {
 					data := []byte(gopp.RandomStringPrintable(int(rand.Uint32()%2000) + 1))
 					time.Sleep(5 * time.Millisecond)
-					c.SendDataPacket(connection_id, data)
+					c.SendDataPacket(connection_id, data, false)
 					// break
 				}
 				// speed send 100KB/s => 90KB/s
