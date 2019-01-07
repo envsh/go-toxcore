@@ -1,10 +1,12 @@
 package mintox
 
 import (
+	"context"
 	"gopp"
 	"log"
 	"math/rand"
-	"time"
+
+	"golang.org/x/time/rate"
 )
 
 var c *TCPClient
@@ -15,17 +17,27 @@ func test_tcp_client() {
 	if mode == "srv" {
 		c = NewTCPClientRaw(bsaddr, bspubkey, echo_serv_pubkey_str, echo_serv_seckey_str)
 		c.OnConfirmed = func() { c.ConnectPeer(echo_cli_pubkey_str) }
+		c.RoutingDataFunc = func(obj Object, number uint32, connid uint8, data []byte, cbdata Object) {
+			log.Println("recv data:", connid, len(data))
+		}
 		log.Println(&c)
 	} else if mode == "cli" {
 		c = NewTCPClientRaw(bsaddr, bspubkey, echo_cli_pubkey_str, echo_cli_seckey_str)
 		c.OnConfirmed = func() { c.ConnectPeer(echo_serv_pubkey_str) }
 
 		c.RoutingStatusFunc = func(object Object, number uint32, connection_id uint8, status uint8) {
+			log.Println("status", connection_id, status)
 			go func() {
+				totlen := 0
+				l := rate.NewLimiter(rate.Limit(80000), 5000)
 				for i := 0; i < 1000000; i++ {
 					data := []byte(gopp.RandomStringPrintable(int(rand.Uint32()%2000) + 1))
-					time.Sleep(5 * time.Millisecond)
-					c.SendDataPacket(connection_id, data, false)
+					// time.Sleep(5 * time.Millisecond)
+					l.WaitN(context.Background(), len(data))
+					_, err := c.SendDataPacket(connection_id, data, false)
+					gopp.ErrPrint(err, len(data))
+					totlen += len(data)
+					log.Println(i, "sent", len(data), totlen, l.Limit())
 					// break
 				}
 				// speed send 100KB/s => 90KB/s
@@ -43,6 +55,7 @@ func test_tcp_client() {
 }
 
 var bsnodes = []string{
+	"tox.yikifish.com:33445", "8EF12E275BA9CD7D56625D4950F2058B06D5905D0650A1FE76AF18DB986DF760",
 	"104.223.122.15:33445", "0FB96EEBFB1650DDB52E70CF773DDFCABE25A95CC3BB50FC251082E4B63EF82A",
 	"113.206.157.102:33445", "AF66C5FFAA6CA67FB8E287A5B1D8581C15B446E12BF330963EF29E3AFB692918",
 	// "127.0.0.1:23456", "B114C64A74806079ADB30E579CD48D2593738F907A12FD7358A18B35BB1FC025",

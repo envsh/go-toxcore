@@ -788,7 +788,7 @@ func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
 		return nil, emperror.With(fmt.Errorf("Ctrl queue is full"))
 	}
 	if !this.isConfirmed() {
-		return nil, emperror.With(fmt.Errorf("Cannot send data status is %d", this.status))
+		return nil, emperror.With(fmt.Errorf("Cannot send data status is %d", tcpstname(this.getStatus())))
 	}
 	btime := time.Now()
 	select {
@@ -821,7 +821,7 @@ func (this *TCPClient) SendDataPacket(connid uint8, data []byte, prior bool) (en
 		// return nil, emperror.With(fmt.Errorf("Data queue is full"))
 	}
 	if !this.isConfirmed() {
-		return nil, emperror.With(fmt.Errorf("Cannot send data status is %d", this.status))
+		return nil, emperror.With(fmt.Errorf("Cannot send data status is %d", tcpstname(this.getStatus())))
 	}
 
 	buf := gopp.NewBufferZero()

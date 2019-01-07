@@ -15,6 +15,9 @@ import (
 	"strings"
 	"unsafe"
 
+	// pure go: github.com/kevinburke/nacl
+	// pure go: github.com/ArteMisc/libgodium
+	// fork of GoKillers/libsodium-go: github.com/jamesruan/sodium
 	"github.com/GoKillers/libsodium-go/cryptobox"
 	"github.com/GoKillers/libsodium-go/randombytes"
 	cbsupport "github.com/GoKillers/libsodium-go/support"
