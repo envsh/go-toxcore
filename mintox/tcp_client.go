@@ -285,15 +285,13 @@ func (this *TCPClient) runmainproc() {
 		err := this.doReadConn()
 		gopp.ErrPrint(err, this.ServAddr)
 		wg.Done()
-		err = this.conn.Close()
-		gopp.ErrPrint(err)
+		close(this.cwctrlq)
+		close(this.cwdataq)
 	}()
 
 	wg.Wait()
 	this.setStatus(TCP_CLIENT_DISCONNECTED)
 	close(this.PingDoneC)
-	// close(this.cwctrlq)
-	// close(this.cwdataq)
 
 	log.Println("client proc done", this.ServAddr)
 	this.dbgst.Dump()
@@ -784,7 +782,7 @@ func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
 		return nil, emperror.With(fmt.Errorf("Data too long: %d, want: %d", len(data), 2048))
 	}
 	if len(this.cwctrlq) >= cap(this.cwctrlq) {
-		log.Println("Ctrl queue is full, drop pkt...", len(data), this.cwctrldlen)
+		log.Println("Ctrl queue is full, drop pkt...", len(data), atomic.LoadInt32(&this.cwctrldlen))
 		return nil, emperror.With(fmt.Errorf("Ctrl queue is full"))
 	}
 	if !this.isConfirmed() {
@@ -802,10 +800,10 @@ func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
 	// encpkt, err = this.CreatePacket(buf.Bytes())
 	// this.WritePacket(encpkt)
 	dtime := time.Since(btime)
-	if dtime > 5*time.Millisecond {
-		log.Println("send use too long", len(data), dtime)
-	} else if dtime > 2*time.Millisecond {
-		log.Println("send use too long", len(data), dtime)
+	if dtime > 15*time.Millisecond {
+		log.Println("send time too long", len(data), dtime)
+	} else if dtime > 5*time.Millisecond {
+		log.Println("send time too long", len(data), dtime)
 	}
 	return
 }
@@ -828,7 +826,7 @@ func (this *TCPClient) SendDataPacket(connid uint8, data []byte, prior bool) (en
 	buf.WriteByte(byte(connid))
 	buf.Write(data)
 	if prior {
-		this.SendCtrlPacket(buf.Bytes())
+		return this.SendCtrlPacket(buf.Bytes())
 	}
 
 	btime := time.Now()
@@ -842,8 +840,8 @@ func (this *TCPClient) SendDataPacket(connid uint8, data []byte, prior bool) (en
 		return nil, emperror.With(fmt.Errorf("Data queue is full"))
 	}
 	dtime := time.Since(btime)
-	if dtime > 2*time.Millisecond {
-		log.Println("send use too long time", len(data), dtime)
+	if dtime > 12*time.Millisecond {
+		log.Println("send time too long", len(data), dtime)
 	}
 	return
 }
