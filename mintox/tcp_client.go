@@ -198,7 +198,7 @@ func NewTCPClient(serv_addr string, serv_pubkey, self_pubkey, self_seckey *Crypt
 
 	this.conns = NewBiMap()
 
-	go this.doinit()
+	// go this.doinit()
 	return this
 }
 
@@ -217,6 +217,8 @@ func (this *TCPClient) SetKeyPair(pubkey, seckey *CryptoKey) {
 	this.Shrkey, err = CBBeforeNm(this.ServPubkey, this.SelfSeckey)
 	gopp.ErrPrint(err)
 }
+
+func (this *TCPClient) Startup() { go this.doinit() }
 
 // should block
 func (this *TCPClient) doinit() {
