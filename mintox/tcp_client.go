@@ -16,6 +16,8 @@ import (
 	"time"
 	"unsafe"
 
+	"mkuse/rudp"
+
 	"github.com/djherbis/buffer"
 	"github.com/goph/emperror"
 	deadlock "github.com/sasha-s/go-deadlock"
@@ -137,11 +139,11 @@ type TCPClient struct {
 	}
 
 	conn       net.Conn
-	crbuf_     buffer.Buffer // conn read ring buffer
-	crbuf      *PeekableRing // crbuf with peek
-	cwctrlq    chan []byte   // ctrl packets like pong []byte
-	cwctrldlen int32         // data length of cwctrlq
-	cwdataq    chan []byte
+	crbuf_     buffer.Buffer           // conn read ring buffer
+	crbuf      *PeekableRing           // crbuf with peek
+	cwctrlq    chan *rudp.PfxByteArray // ctrl packets like pong []byte
+	cwctrldlen int32                   // data length of cwctrlq
+	cwdataq    chan *rudp.PfxByteArray
 	cwdatadlen int32  // data length of cwdataq
 	conns      *BiMap // connid uint8 <=> pkbinstr
 
@@ -252,8 +254,8 @@ func (this *TCPClient) connect() error {
 	this.conn = c
 	this.crbuf_ = buffer.NewRing(buffer.New(1024 * 1024))
 	this.crbuf = NewPeekableRing(this.crbuf_)
-	this.cwctrlq = make(chan []byte, 32)
-	this.cwdataq = make(chan []byte, 128) // TODO 如果每次1k的话，这个缓存就太小了
+	this.cwctrlq = make(chan *rudp.PfxByteArray, 32)
+	this.cwdataq = make(chan *rudp.PfxByteArray, 128) // TODO 如果每次1k的话，这个缓存就太小了
 
 	go this.runmainproc()
 	return nil
@@ -329,11 +331,12 @@ func (this *TCPClient) doWriteConn() error {
 	var rerr error
 	flushCtrl := func() error {
 		for len(this.cwctrlq) > 0 {
-			data := <-this.cwctrlq
-			atomic.AddInt32(&this.cwctrldlen, -int32(len(data)))
-			var datai = []interface{}{data}
+			datbuf := <-this.cwctrlq
+			atomic.AddInt32(&this.cwctrldlen, -int32(datbuf.FullLen()))
+			var datai = []interface{}{datbuf.FullData()}
 			wn, err := this.WritePacket(datai[0].([]byte))
 			gopp.ErrPrint(err, wn, this.ServAddr)
+			rudp.PfxBuffp().Put(datbuf)
 			if err != nil {
 				return err
 			}
@@ -349,13 +352,13 @@ func (this *TCPClient) doWriteConn() error {
 	lastLogTime := time.Now().Add(-3 * time.Second)
 	stop := false
 	for !stop {
-		data, ctrlq, rok := []byte(nil), false, false
+		datbuf, ctrlq, rok := (*rudp.PfxByteArray)(nil), false, false
 		select {
-		case data, rok = <-this.cwctrlq:
-			atomic.AddInt32(&this.cwctrldlen, -int32(len(data)))
+		case datbuf, rok = <-this.cwctrlq:
+			atomic.AddInt32(&this.cwctrldlen, -int32(datbuf.FullLen()))
 			ctrlq = true
-		case data, rok = <-this.cwdataq:
-			atomic.AddInt32(&this.cwdatadlen, -int32(len(data)))
+		case datbuf, rok = <-this.cwdataq:
+			atomic.AddInt32(&this.cwdatadlen, -int32(datbuf.FullLen()))
 		}
 		if !rok {
 			rerr = fmt.Errorf("send chan closed")
@@ -375,9 +378,10 @@ func (this *TCPClient) doWriteConn() error {
 			// log.Println("sending ctrl pkt", len(this.cwctrlq), this.ServAddr)
 		}
 
-		var datai = []interface{}{data}
+		var datai = []interface{}{datbuf.FullData()}
 		wn, err := this.WritePacket(datai[0].([]byte))
 		gopp.ErrPrint(err, wn, this.ServAddr)
+		rudp.PfxBuffp().Put(datbuf)
 		if err != nil {
 			rerr = err
 			goto endloop
@@ -790,9 +794,12 @@ func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
 	if !this.isConfirmed() {
 		return nil, emperror.With(fmt.Errorf("Cannot send data status is %v", tcpstname(this.getStatus())))
 	}
+
 	btime := time.Now()
+	datbuf := rudp.PfxBuffp().Get()
+	datbuf.Copy(data)
 	select {
-	case this.cwctrlq <- data:
+	case this.cwctrlq <- datbuf:
 		atomic.AddInt32(&this.cwctrldlen, int32(len(data)))
 	case <-time.After(5 * time.Second):
 		// default:
@@ -810,6 +817,7 @@ func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
 	return
 }
 
+// we not hold data ownership now
 // TODO split data
 func (this *TCPClient) SendDataPacket(connid uint8, data []byte, prior bool) (encpkt []byte, err error) {
 	if len(data) > 2048 {
@@ -824,17 +832,22 @@ func (this *TCPClient) SendDataPacket(connid uint8, data []byte, prior bool) (en
 		return nil, emperror.With(fmt.Errorf("Cannot send data status is %v", tcpstname(this.getStatus())))
 	}
 
-	buf := gopp.NewBufferZero()
-	buf.WriteByte(byte(connid))
-	buf.Write(data)
+	datbuf := rudp.PfxBuffp().Get()
+	datbuf.Copy(data)
+	datbuf.PPU8(connid)
+
+	// buf := gopp.NewBufferZero()
+	// buf.WriteByte(byte(connid))
+	// buf.Write(data)
 	if prior {
-		return this.SendCtrlPacket(buf.Bytes())
+		defer rudp.PfxBuffp().Put(datbuf)
+		return this.SendCtrlPacket(datbuf.FullData())
 	}
 
 	btime := time.Now()
 	select {
-	case this.cwdataq <- buf.Bytes():
-		atomic.AddInt32(&this.cwdatadlen, int32(buf.Len()))
+	case this.cwdataq <- datbuf:
+		atomic.AddInt32(&this.cwdatadlen, int32(datbuf.FullLen()))
 	case <-time.After(5 * time.Second):
 		// default:
 		// log.Println("Data queue is full, drop pkt.", len(this.cwdataq), connid, len(data), this.cwdatadlen)
