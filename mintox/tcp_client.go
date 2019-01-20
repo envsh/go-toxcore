@@ -355,10 +355,14 @@ func (this *TCPClient) doWriteConn() error {
 		datbuf, ctrlq, rok := (*rudp.PfxByteArray)(nil), false, false
 		select {
 		case datbuf, rok = <-this.cwctrlq:
-			atomic.AddInt32(&this.cwctrldlen, -int32(datbuf.FullLen()))
-			ctrlq = true
+			if rok {
+				atomic.AddInt32(&this.cwctrldlen, -int32(datbuf.FullLen()))
+				ctrlq = true
+			}
 		case datbuf, rok = <-this.cwdataq:
-			atomic.AddInt32(&this.cwdatadlen, -int32(datbuf.FullLen()))
+			if rok {
+				atomic.AddInt32(&this.cwdatadlen, -int32(datbuf.FullLen()))
+			}
 		}
 		if !rok {
 			rerr = fmt.Errorf("send chan closed")
@@ -798,6 +802,7 @@ func (this *TCPClient) SendCtrlPacket(data []byte) (encpkt []byte, err error) {
 	btime := time.Now()
 	datbuf := rudp.PfxBuffp().Get()
 	datbuf.Copy(data)
+
 	select {
 	case this.cwctrlq <- datbuf:
 		atomic.AddInt32(&this.cwctrldlen, int32(len(data)))
