@@ -11,6 +11,8 @@ import (
 	tox "github.com/TokTok/go-toxcore-c"
 )
 
+var EnablePing = true
+
 type NodePool struct {
 }
 
@@ -89,6 +91,7 @@ func pingNodesLoop() {
 		pingNodes()
 		// TODO longer ping interval
 		time.Sleep(300 * time.Second)
+		stop = !EnablePing
 	}
 }
 func pingNodes() {

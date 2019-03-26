@@ -16,7 +16,7 @@ import (
 	"time"
 	"unsafe"
 
-	"mkuse/rudp"
+	rudp "mkuse/rudp2"
 
 	"github.com/djherbis/buffer"
 	"github.com/goph/emperror"

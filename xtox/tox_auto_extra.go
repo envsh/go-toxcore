@@ -36,7 +36,7 @@ features:
 
 const (
 	FOTA_NONE                          = 0 << 0
-	FOTA_ALL                           = int(math.MaxInt64)
+	FOTA_ALL                           = int(math.MaxInt32) // fix 32OS
 	FOTA_ADD_NET_HELP_BOTS             = 1 << 0
 	FOTA_ACCEPT_GROUP_INVITE           = 1 << 1
 	FOTA_ACCEPT_FRIEND_REQUEST         = 1 << 2
