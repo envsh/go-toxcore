@@ -31,15 +31,6 @@ func newNodePool() *NodePool {
 	return this
 }
 
-var thirdPartyServers = []interface{}{
-	"114.215.156.251", uint16(33445), "4575D94B71E432331BEB8CF5638CD78AD8385EACE76046AD35C440EF51C0D046",
-	"205.185.116.116", uint16(33445), "A179B09749AC826FF01F37A9613F6B57118AE014D4196A0E1105A98F93A54702",
-	"121.42.190.32", uint16(33445), "0246E8E1DDF5FFCA357E55C6BEA11490E5BFF274D4861DE51E33EA604EFAAA36",
-	"biribiri.org", uint16(33445), "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67",
-	"zawertun.net", uint16(33445), "5521952892FBD5C185DF7180DB4DEF69D7844DEEE79B1F75A634ED9DF656756E",
-	// "127.0.0.1", uint16(33445), "398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52",
-}
-
 // empty => default
 func Bootstrap(t *tox.Tox, grp string) {
 	node := get1node(grp)
@@ -62,20 +53,20 @@ func switchServer(t *tox.Tox) {
 	for _, node := range newNodes {
 		bootstrapFrom(t, node)
 	}
-	currNodes = newNodes
+	ndp.currNodes = newNodes
 }
 
 func get3nodes() (nodes [3]ToxNode) {
 	idxes := make(map[int]bool, 0)
 	currips := make(map[string]bool, 0)
-	for idx := 0; idx < len(currNodes); idx++ {
-		currips[currNodes[idx].Ipaddr] = true
+	for idx := 0; idx < len(ndp.currNodes); idx++ {
+		currips[ndp.currNodes[idx].Ipaddr] = true
 	}
-	for n := 0; n < len(allNodes)*3; n++ {
-		idx := rand.Int() % len(allNodes)
+	for n := 0; n < len(ndp.allNodes)*3; n++ {
+		idx := rand.Int() % len(ndp.allNodes)
 		_, ok1 := idxes[idx]
-		_, ok2 := currips[allNodes[idx].Ipaddr]
-		if !ok1 && !ok2 && allNodes[idx].status_tcp == true && allNodes[idx].last_ping_rt > 0 {
+		_, ok2 := currips[ndp.allNodes[idx].Ipaddr]
+		if !ok1 && !ok2 && ndp.allNodes[idx].status_tcp == true && ndp.allNodes[idx].last_ping_rt > 0 {
 			idxes[idx] = true
 			if len(idxes) == 3 {
 				break
@@ -88,7 +79,7 @@ func get3nodes() (nodes [3]ToxNode) {
 
 	_idx := 0
 	for k, _ := range idxes {
-		nodes[_idx] = allNodes[k]
+		nodes[_idx] = ndp.allNodes[k]
 		_idx += 1
 	}
 	return
@@ -104,7 +95,6 @@ func get1node(grp string) ToxNode {
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
-	initThirdPartyNodes()
 	initToxNodes()
 	go pingNodesLoop()
 }
@@ -113,19 +103,20 @@ func init() {
 // setcap cap_net_raw=+ep /bin/goping-binary
 // should block
 func pingNodesLoop() {
-	stop := !EnablePing
+	stop := false
 	for !stop {
-		pingNodes()
+		if EnablePing {
+			pingNodes()
+		}
 		// TODO longer ping interval
 		time.Sleep(300 * time.Second)
-		stop = !EnablePing
 	}
 }
 func pingNodes() {
 	btime := time.Now()
 	errcnt := 0
 	var errs = make(map[string]int)
-	for idx, node := range allNodes {
+	for idx, node := range ndp.allNodes {
 		if false {
 			log.Println(idx, node)
 		}
@@ -143,34 +134,19 @@ func pingNodes() {
 				}
 			}
 			if err == nil {
-				allNodes[idx].last_ping_rt = uint(time.Now().Unix())
-				allNodes[idx].rtt = rtt
+				ndp.allNodes[idx].last_ping_rt = uint(time.Now().Unix())
+				ndp.allNodes[idx].rtt = rtt
 			} else {
-				allNodes[idx].last_ping_rt = uint(0)
-				allNodes[idx].rtt = time.Duration(0)
+				ndp.allNodes[idx].last_ping_rt = uint(0)
+				ndp.allNodes[idx].rtt = time.Duration(0)
 			}
 		}
 	}
 	etime := time.Now()
-	log.Printf("Pinged all=%d, errcnt=%d, %v, %d, %+v\n", len(allNodes), errcnt, etime.Sub(btime),
-		len(errs), errs)
+	log.Printf("Pinged all=%d, errcnt=%d, %v, %d, %+v\n",
+		len(ndp.allNodes), errcnt, etime.Sub(btime), len(errs), errs)
 }
 
-func initThirdPartyNodes() {
-	for idx := 0; idx < 3*3; idx += 3 {
-		node := ToxNode{
-			isthird:      true,
-			Ipaddr:       thirdPartyServers[idx].(string),
-			Port:         thirdPartyServers[idx+1].(uint16),
-			Pubkey:       thirdPartyServers[idx+2].(string),
-			last_ping:    uint(time.Now().Unix()),
-			last_ping_rt: uint(time.Now().Unix()),
-			status_tcp:   true,
-		}
-
-		allNodes = append(allNodes, node)
-	}
-}
 func AddNode(pkey string, ip string, port int, tcp_ports ...int) {
 	n := ToxNode{}
 	n.Pubkey = pkey
@@ -184,7 +160,7 @@ func AddNode(pkey string, ip string, port int, tcp_ports ...int) {
 	ndp.allNodes = append(ndp.allNodes, n)
 }
 func ExportNodes() string {
-	bcc, err := json.Marshal(allNodes)
+	bcc, err := json.Marshal(ndp.allNodes)
 	if err != nil {
 		log.Panicln("wtf", err)
 	}
@@ -218,27 +194,24 @@ func initToxNodes() {
 			weight:       calcNodeWeight(nodej),
 		}
 
-		allNodes = append(allNodes, node)
-		if idx < len(currNodes) {
-			currNodes[idx] = node
+		ndp.allNodes = append(ndp.allNodes, node)
+		if idx < len(ndp.currNodes) {
+			ndp.currNodes[idx] = node
 		}
 	}
 
-	sort.Sort(ByRand(allNodes))
-	for idx, node := range allNodes {
+	sort.Sort(ByRand(ndp.allNodes))
+	for idx, node := range ndp.allNodes {
 		if false {
 			log.Println(idx, node.Ipaddr, node.Port, node.last_ping)
 		}
 	}
-	log.Println("Load nodes:", len(allNodes))
+	log.Println("Load nodes:", len(ndp.allNodes))
 }
 
 func calcNodeWeight(nodej *simplejson.Json) int {
 	return 0
 }
-
-var allNodes = make([]ToxNode, 0)
-var currNodes [3]ToxNode
 
 type ToxNode struct {
 	isthird    bool
