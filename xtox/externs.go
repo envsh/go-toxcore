@@ -278,12 +278,19 @@ func Connect(this *tox.Tox) error {
 	err := _Connect(this)
 
 	go func() {
-		for i := 0; i < 10; i++ {
+		var discontime = time.Now()
+		stop := false
+		for !stop {
 			time.Sleep(10 * time.Second)
 			if this.SelfGetConnectionStatus() > 0 {
-				break
+				discontime = time.Now()
+			} else {
+				if time.Since(discontime) > 30*time.Second {
+					discontime = time.Now()
+					_Connect(this)
+					ConnectFixed(this)
+				}
 			}
-			_Connect(this)
 		}
 	}()
 
@@ -333,7 +340,7 @@ func ConnectFixed(this *tox.Tox) error {
 
 	// bootstrap
 	fixedNodes := []ToxNode{
-		ToxNode{Ipaddr: "cotox.tk", Port: uint16(33445), Pubkey: "AF66C5FFAA6CA67FB8E287A5B1D8581C15B446E12BF330963EF29E3AFB692918"},
+		ToxNode{Ipaddr: "37.48.122.22", Port: uint16(33445), Pubkey: "1B5A8AB25FFFB66620A531C4646B47F0F32B74C547B30AF8BD8266CA50A3AB59"},
 	}
 	var err error
 	for _, n := range fixedNodes {

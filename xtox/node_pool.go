@@ -1,9 +1,11 @@
 package xtox
 
 import (
+	"encoding/json"
 	"log"
 	"math/rand"
 	"sort"
+	"sync"
 	"time"
 
 	simplejson "github.com/bitly/go-simplejson"
@@ -11,13 +13,21 @@ import (
 	tox "github.com/TokTok/go-toxcore-c"
 )
 
+// settable
 var EnablePing = true
+var ndp = newNodePool()
 
 type NodePool struct {
+	sync.RWMutex
+	allNodes  []ToxNode
+	currNodes [3]ToxNode
+	grpNodes  map[string][]ToxNode
 }
 
 func newNodePool() *NodePool {
 	this := &NodePool{}
+	this.allNodes = []ToxNode{}
+	this.grpNodes = map[string][]ToxNode{}
 	return this
 }
 
@@ -30,18 +40,27 @@ var thirdPartyServers = []interface{}{
 	// "127.0.0.1", uint16(33445), "398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52",
 }
 
+// empty => default
+func Bootstrap(t *tox.Tox, grp string) {
+	node := get1node(grp)
+	bootstrapFrom(t, node)
+}
+func bootstrapFrom(t *tox.Tox, node ToxNode) {
+	r1, err := t.Bootstrap(node.Ipaddr, node.Port, node.Pubkey)
+	if node.status_tcp {
+		r2, err := t.AddTcpRelay(node.Ipaddr, node.Port, node.Pubkey)
+		log.Println("bootstrap(tcp):", r1, err, r2, node.Ipaddr, node.last_ping, node.status_tcp)
+	} else {
+		log.Println("bootstrap(udp):", r1, err, node.Ipaddr,
+			node.last_ping, node.status_tcp, node.last_ping_rt)
+	}
+}
+
 // 切换到其他的bootstrap nodes上
 func switchServer(t *tox.Tox) {
 	newNodes := get3nodes()
 	for _, node := range newNodes {
-		r1, err := t.Bootstrap(node.Ipaddr, node.Port, node.Pubkey)
-		if node.status_tcp {
-			r2, err := t.AddTcpRelay(node.Ipaddr, node.Port, node.Pubkey)
-			log.Println("bootstrap(tcp):", r1, err, r2, node.Ipaddr, node.last_ping, node.status_tcp)
-		} else {
-			log.Println("bootstrap(udp):", r1, err, node.Ipaddr,
-				node.last_ping, node.status_tcp, node.last_ping_rt)
-		}
+		bootstrapFrom(t, node)
 	}
 	currNodes = newNodes
 }
@@ -74,6 +93,14 @@ func get3nodes() (nodes [3]ToxNode) {
 	}
 	return
 }
+func get1node(grp string) ToxNode {
+	nodes, ok := ndp.grpNodes[grp]
+	if !ok {
+		nodes = ndp.allNodes
+	}
+	idx := int(rand.Uint32() % uint32(len(nodes)))
+	return nodes[idx]
+}
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -86,7 +113,7 @@ func init() {
 // setcap cap_net_raw=+ep /bin/goping-binary
 // should block
 func pingNodesLoop() {
-	stop := false
+	stop := !EnablePing
 	for !stop {
 		pingNodes()
 		// TODO longer ping interval
@@ -144,6 +171,25 @@ func initThirdPartyNodes() {
 		allNodes = append(allNodes, node)
 	}
 }
+func AddNode(pkey string, ip string, port int, tcp_ports ...int) {
+	n := ToxNode{}
+	n.Pubkey = pkey
+	n.Ipaddr = ip
+	n.Port = uint16(port)
+	for _, port := range tcp_ports {
+		n.Tcp_ports = append(n.Tcp_ports, uint16(port))
+	}
+	n.status_tcp = len(tcp_ports) > 0
+	n.isthird = true
+	ndp.allNodes = append(ndp.allNodes, n)
+}
+func ExportNodes() string {
+	bcc, err := json.Marshal(allNodes)
+	if err != nil {
+		log.Panicln("wtf", err)
+	}
+	return string(bcc)
+}
 
 func initToxNodes() {
 	bcc, err := Asset("toxnodes.json")
@@ -197,7 +243,7 @@ var currNodes [3]ToxNode
 type ToxNode struct {
 	isthird    bool
 	Ipaddr     string
-	Port       uint16
+	Port       uint16 // udp port
 	Tcp_ports  []uint16
 	Pubkey     string
 	weight     int

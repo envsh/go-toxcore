@@ -25,12 +25,12 @@ static void xtox_iter_inner(void*vt) {
 import "C"
 import tox "github.com/TokTok/go-toxcore-c"
 
-func IterFixed(t *tox.Tox, ms int) {
+func IterIncFixed(t *tox.Tox, ms int) {
 	ctox := GetCTox(t)
 	C.xtox_iter_fixed(ctox, C.int(ms))
 }
 
-func IterInner(t *tox.Tox) {
+func IterIncInner(t *tox.Tox) {
 	ctox := GetCTox(t)
 	C.xtox_iter_inner(ctox)
 }
