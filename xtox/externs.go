@@ -317,17 +317,7 @@ func _Connect(this *tox.Tox) error {
 		_, err = this.AddTcpRelay(n.Ipaddr, n.Port, n.Pubkey)
 	}
 
-	nodes := get3nodes()
-	for _, n := range nodes {
-		if n.Ipaddr == "" || n.Pubkey == "" {
-			continue
-		}
-		_, err = this.Bootstrap(n.Ipaddr, n.Port, n.Pubkey)
-		if n.status_tcp {
-			_, err = this.AddTcpRelay(n.Ipaddr, n.Port, n.Pubkey)
-		}
-	}
-
+	err = SwitchServer(this, "")
 	return err
 }
 

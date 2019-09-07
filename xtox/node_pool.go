@@ -21,7 +21,7 @@ type NodePool struct {
 	sync.RWMutex
 	allNodes  []ToxNode
 	currNodes [3]ToxNode
-	grpNodes  map[string][]ToxNode
+	grpNodes  map[string][]ToxNode // group =>
 }
 
 func newNodePool() *NodePool {
@@ -31,42 +31,61 @@ func newNodePool() *NodePool {
 	return this
 }
 
-// empty => default
-func Bootstrap(t *tox.Tox, grp string) {
+// empty grp => default
+func Bootstrap(t *tox.Tox, grp string) error {
 	node := get1node(grp)
-	bootstrapFrom(t, node)
+	err := bootstrapFrom(t, node)
+	return err
 }
-func bootstrapFrom(t *tox.Tox, node ToxNode) {
+func bootstrapFrom(t *tox.Tox, node ToxNode) error {
 	r1, err := t.Bootstrap(node.Ipaddr, node.Port, node.Pubkey)
 	if node.status_tcp {
-		r2, err := t.AddTcpRelay(node.Ipaddr, node.Port, node.Pubkey)
-		log.Println("bootstrap(tcp):", r1, err, r2, node.Ipaddr, node.last_ping, node.status_tcp)
+		r2, err1 := t.AddTcpRelay(node.Ipaddr, node.Port, node.Pubkey)
+		log.Println("bootstrap(tcp):", r1, err1, r2, node.Ipaddr, node.last_ping, node.status_tcp)
+		if err1 != nil {
+			err = err1
+		}
 	} else {
 		log.Println("bootstrap(udp):", r1, err, node.Ipaddr,
 			node.last_ping, node.status_tcp, node.last_ping_rt)
 	}
+	return err
 }
 
 // 切换到其他的bootstrap nodes上
-func switchServer(t *tox.Tox) {
-	newNodes := get3nodes()
+func SwitchServer(t *tox.Tox, grp string) error {
+	var err error
+	newNodes := get3nodes(grp)
 	for _, node := range newNodes {
-		bootstrapFrom(t, node)
+		err1 := bootstrapFrom(t, node)
+		if err1 != nil {
+			err = err1
+		}
 	}
 	ndp.currNodes = newNodes
+	return err
 }
 
-func get3nodes() (nodes [3]ToxNode) {
+func get3nodes(grp string) (nodes [3]ToxNode) {
+	srcnodes := []ToxNode{}
+	if grp != "" {
+		srcnodes = ndp.grpNodes[grp]
+	} else {
+		srcnodes = ndp.allNodes
+	}
+	return get3nodesFrom(srcnodes)
+}
+func get3nodesFrom(srcnodes []ToxNode) (nodes [3]ToxNode) {
 	idxes := make(map[int]bool, 0)
 	currips := make(map[string]bool, 0)
-	for idx := 0; idx < len(ndp.currNodes); idx++ {
-		currips[ndp.currNodes[idx].Ipaddr] = true
+	for idx := 0; idx < len(srcnodes); idx++ {
+		currips[srcnodes[idx].Ipaddr] = true
 	}
-	for n := 0; n < len(ndp.allNodes)*3; n++ {
-		idx := rand.Int() % len(ndp.allNodes)
+	for n := 0; n < len(srcnodes)*3; n++ {
+		idx := rand.Int() % len(nodes)
 		_, ok1 := idxes[idx]
-		_, ok2 := currips[ndp.allNodes[idx].Ipaddr]
-		if !ok1 && !ok2 && ndp.allNodes[idx].status_tcp == true && ndp.allNodes[idx].last_ping_rt > 0 {
+		_, ok2 := currips[srcnodes[idx].Ipaddr]
+		if !ok1 && !ok2 && srcnodes[idx].status_tcp == true && srcnodes[idx].last_ping_rt > 0 {
 			idxes[idx] = true
 			if len(idxes) == 3 {
 				break
@@ -79,7 +98,7 @@ func get3nodes() (nodes [3]ToxNode) {
 
 	_idx := 0
 	for k, _ := range idxes {
-		nodes[_idx] = ndp.allNodes[k]
+		nodes[_idx] = srcnodes[k]
 		_idx += 1
 	}
 	return
@@ -147,7 +166,8 @@ func pingNodes() {
 		len(ndp.allNodes), errcnt, etime.Sub(btime), len(errs), errs)
 }
 
-func AddNode(pkey string, ip string, port int, tcp_ports ...int) {
+// empty grp to default
+func AddNode(pkey string, ip string, port int, grp string, tcp_ports ...int) {
 	n := ToxNode{}
 	n.Pubkey = pkey
 	n.Ipaddr = ip
@@ -158,6 +178,9 @@ func AddNode(pkey string, ip string, port int, tcp_ports ...int) {
 	n.status_tcp = len(tcp_ports) > 0
 	n.isthird = true
 	ndp.allNodes = append(ndp.allNodes, n)
+	if grp != "" {
+		ndp.grpNodes[grp] = append(ndp.grpNodes[grp], n)
+	}
 }
 func ExportNodes() string {
 	bcc, err := json.Marshal(ndp.allNodes)

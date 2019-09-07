@@ -352,3 +352,9 @@ type FriendInfo struct {
 	Status        uint32
 	LastSeen      uint32
 }
+
+type GroupInfo struct {
+	PeerInfo
+	Ours  bool
+	Peers []PeerInfo
+}
