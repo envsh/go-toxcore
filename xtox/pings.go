@@ -9,17 +9,15 @@ package xtox
 import (
 	"log"
 
-	"github.com/tatsushid/go-fastping"
-	"golang.org/x/net/icmp"
-)
-
-import (
 	"bytes"
 	"errors"
 	"net"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/tatsushid/go-fastping"
+	"golang.org/x/net/icmp"
 )
 
 type EchoPing interface {
@@ -39,7 +37,7 @@ func Ping2(addr string, timeout int) (time.Duration, error) {
 		log.Printf("IP Addr: %s receive, RTT: %v\n", addr.String(), rtt)
 	}
 	p.OnIdle = func() {
-		log.Println("finish")
+		// log.Println("finish")
 	}
 	err = p.Run()
 	if err != nil {

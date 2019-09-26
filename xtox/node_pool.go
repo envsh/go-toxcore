@@ -2,13 +2,20 @@ package xtox
 
 import (
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/http"
+	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	simplejson "github.com/bitly/go-simplejson"
+
 	// tox "github.com/kitech/go-toxcore"
 	tox "github.com/TokTok/go-toxcore-c"
 )
@@ -31,13 +38,18 @@ func newNodePool() *NodePool {
 	return this
 }
 
+// bootstrap and connect tcp relay
 // empty grp => default
 func Bootstrap(t *tox.Tox, grp string) error {
 	node := get1node(grp)
-	err := bootstrapFrom(t, node)
+	err := BootstrapFromNode(t, node)
 	return err
 }
-func bootstrapFrom(t *tox.Tox, node ToxNode) error {
+func BootstrapFromNode(t *tox.Tox, node ToxNode) error {
+	if node.Ipaddr == "" || node.Pubkey == "" {
+		log.Println("wtf empty node")
+		return nil
+	}
 	r1, err := t.Bootstrap(node.Ipaddr, node.Port, node.Pubkey)
 	if node.status_tcp {
 		r2, err1 := t.AddTcpRelay(node.Ipaddr, node.Port, node.Pubkey)
@@ -56,8 +68,9 @@ func bootstrapFrom(t *tox.Tox, node ToxNode) error {
 func SwitchServer(t *tox.Tox, grp string) error {
 	var err error
 	newNodes := get3nodes(grp)
+	// log.Println(len(newNodes), len(ndp.grpNodes[grp]), len(ndp.allNodes), newNodes)
 	for _, node := range newNodes {
-		err1 := bootstrapFrom(t, node)
+		err1 := BootstrapFromNode(t, node)
 		if err1 != nil {
 			err = err1
 		}
@@ -78,22 +91,28 @@ func get3nodes(grp string) (nodes [3]ToxNode) {
 func get3nodesFrom(srcnodes []ToxNode) (nodes [3]ToxNode) {
 	idxes := make(map[int]bool, 0)
 	currips := make(map[string]bool, 0)
-	for idx := 0; idx < len(srcnodes); idx++ {
-		currips[srcnodes[idx].Ipaddr] = true
-	}
+	// for idx := 0; idx < len(srcnodes); idx++ {
+	//	currips[srcnodes[idx].Ipaddr] = true
+	//}
+
 	for n := 0; n < len(srcnodes)*3; n++ {
-		idx := rand.Int() % len(nodes)
+		idx := rand.Int() % len(srcnodes)
 		_, ok1 := idxes[idx]
 		_, ok2 := currips[srcnodes[idx].Ipaddr]
-		if !ok1 && !ok2 && srcnodes[idx].status_tcp == true && srcnodes[idx].last_ping_rt > 0 {
+		// log.Println(ok1, ok2, srcnodes[idx].status_tcp, srcnodes[idx].last_ping_rt > 0)
+		if !ok1 && !ok2 && srcnodes[idx].status_tcp == true { // && srcnodes[idx].last_ping_rt > 0 {
 			idxes[idx] = true
 			if len(idxes) == 3 {
 				break
 			}
 		}
 	}
+	if len(idxes) == 0 {
+		log.Println("Cannot find 3 new nodes:", idxes)
+	}
 	if len(idxes) < 3 {
-		// errl.Println("can not find 3 new nodes:", idxes)
+		// log.Println("Cannot find 3 new nodes:", idxes)
+		// errl.Println("Cannot find 3 new nodes:", idxes)
 	}
 
 	_idx := 0
@@ -101,6 +120,7 @@ func get3nodesFrom(srcnodes []ToxNode) (nodes [3]ToxNode) {
 		nodes[_idx] = srcnodes[k]
 		_idx += 1
 	}
+
 	return
 }
 func get1node(grp string) ToxNode {
@@ -182,22 +202,83 @@ func AddNode(pkey string, ip string, port int, grp string, tcp_ports ...int) {
 		ndp.grpNodes[grp] = append(ndp.grpNodes[grp], n)
 	}
 }
-func ExportNodes() string {
+func DelNodeByIPPort(ip string, port int, grp string) {
+	nodes := ndp.allNodes
+	if grp != "" {
+		nodes = ndp.grpNodes[grp]
+	}
+	newnodes := []ToxNode{}
+	for _, n := range nodes {
+		if n.Ipaddr == ip && int(n.Port) == port {
+			continue
+		}
+		newnodes = append(newnodes, n)
+	}
+	if grp != "" {
+		ndp.grpNodes[grp] = newnodes
+	} else {
+		ndp.allNodes = newnodes
+	}
+}
+func DelNodeByPubkey(pubkey string, grp string) {
+	nodes := ndp.allNodes
+	if grp != "" {
+		nodes = ndp.grpNodes[grp]
+	}
+	newnodes := []ToxNode{}
+	for _, n := range nodes {
+		if n.Pubkey == pubkey {
+			continue
+		}
+		newnodes = append(newnodes, n)
+	}
+	if grp != "" {
+		ndp.grpNodes[grp] = newnodes
+	} else {
+		ndp.allNodes = newnodes
+	}
+}
+func ExportNodes(grp string) []ToxNode {
+	nodes := ndp.grpNodes[grp]
+	return nodes
+}
+func ExportNodesJson() string {
 	bcc, err := json.Marshal(ndp.allNodes)
 	if err != nil {
 		log.Panicln("wtf", err)
 	}
 	return string(bcc)
 }
+func RefreshHttpRemoteNodes(pxy string) error {
+	resp, err := http.Get("https://nodes.tox.chat/json")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	bcc, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	err = parseNodesData(bcc)
+	return err
+}
+
+var bsnodesfile = "toxbsnodes.json"
 
 func initToxNodes() {
-	bcc, err := Asset("toxnodes.json")
+	bcc, err := Asset("toxbsnodes.json")
 	if err != nil {
 		log.Panicln(err)
 	}
-	jso, err := simplejson.NewJson(bcc)
+	err = parseNodesData(bcc)
 	if err != nil {
 		log.Panicln(err)
+	}
+}
+func parseNodesData(bcc []byte) error {
+	jso, err := simplejson.NewJson(bcc)
+	if err != nil {
+		return err
 	}
 
 	nodes := jso.Get("nodes").MustArray()
@@ -230,6 +311,7 @@ func initToxNodes() {
 		}
 	}
 	log.Println("Load nodes:", len(ndp.allNodes))
+	return nil
 }
 
 func calcNodeWeight(nodej *simplejson.Json) int {
@@ -258,3 +340,41 @@ type ByRand []ToxNode
 func (this ByRand) Len() int           { return len(this) }
 func (this ByRand) Swap(i, j int)      { this[i], this[j] = this[j], this[i] }
 func (this ByRand) Less(i, j int) bool { return rand.Int()%2 == 0 }
+
+func (n ToxNode) Weight() int {
+	return n.weight
+}
+func (n ToxNode) Rttms() int {
+	return int(n.rtt.Nanoseconds() / 1000000)
+}
+func (n ToxNode) IsRelay() bool {
+	return n.status_tcp
+}
+func (n ToxNode) LastSeen() time.Time {
+	return time.Unix(int64(n.last_ping), 0)
+}
+func (n ToxNode) String() string {
+	return fmt.Sprintf("%s:%d:%s", n.Ipaddr, n.Port, n.Pubkey)
+	// libp2p's Multiaddr format???
+	// /ip4/ip/tcp/port/key
+	// /ip4/ip/udp/port/key
+}
+func NewToxNodeFrom(ipportpubkey string) (n ToxNode, err error) {
+	parts := strings.Split(ipportpubkey, ":")
+	if len(parts) != 3 {
+		return n, os.ErrInvalid
+	}
+	if !CheckPubkey(parts[2]) {
+		return n, os.ErrInvalid
+	}
+	iport, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return n, err
+	}
+
+	n.Pubkey = parts[2]
+	n.Port = uint16(iport)
+	n.Ipaddr = parts[0]
+
+	return
+}

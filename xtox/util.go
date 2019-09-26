@@ -77,3 +77,13 @@ func LoadSavedata(this *tox.Tox, fname string) ([]byte, error) {
 func CallStateString(state uint32) string {
 	return ""
 }
+
+var connstatus = map[int]string{0: "NON", 1: "TCP", 2: "UDP"}
+var userstatus = map[int]string{0: "OFFLINE", 1: "ONLINE", 2: "BUSY", 3: "AWAY"}
+
+func ConnStatus2Str(status int) string {
+	if s, ok := connstatus[status]; ok {
+		return s
+	}
+	return "UKN"
+}

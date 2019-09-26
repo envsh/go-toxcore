@@ -5,9 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"gopp"
-	"log"
 	"math"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -272,74 +270,6 @@ func deperated_ConferenceNameToIdentifier(name string) string {
 	rname := gopp.StrReverse(name)
 	hrname := md5.Sum([]byte(rname))
 	return hex.EncodeToString(hname[:]) + hex.EncodeToString(hrname[:])
-}
-
-func Connect(this *tox.Tox) error {
-	err := _Connect(this)
-
-	go func() {
-		var discontime = time.Now()
-		stop := false
-		for !stop {
-			time.Sleep(10 * time.Second)
-			if this.SelfGetConnectionStatus() > 0 {
-				discontime = time.Now()
-			} else {
-				if time.Since(discontime) > 30*time.Second {
-					discontime = time.Now()
-					_Connect(this)
-					ConnectFixed(this)
-				}
-			}
-		}
-	}()
-
-	return err
-}
-
-func _Connect(this *tox.Tox) error {
-	defer func() {
-		if err := recover(); err != nil {
-			log.Println(err)
-			debug.PrintStack()
-		}
-	}()
-
-	// bootstrap
-	fixedNodes := []ToxNode{
-		ToxNode{Ipaddr: "194.249.212.109", Port: uint16(33445), Pubkey: "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B"},
-		ToxNode{Ipaddr: "130.133.110.14", Port: uint16(33445), Pubkey: "461FA3776EF0FA655F1A05477DF1B3B614F7D6B124F7DB1DD4FE3C08B03B640F"},
-		ToxNode{Ipaddr: "85.172.30.117", Port: uint16(33445), Pubkey: "8E7D0B859922EF569298B4D261A8CCB5FEA14FB91ED412A7603A585A25698832"},
-	}
-	var err error
-	for _, n := range fixedNodes {
-		_, err = this.Bootstrap(n.Ipaddr, n.Port, n.Pubkey)
-		_, err = this.AddTcpRelay(n.Ipaddr, n.Port, n.Pubkey)
-	}
-
-	err = SwitchServer(this, "")
-	return err
-}
-
-// connect one fixed node
-func ConnectFixed(this *tox.Tox) error {
-	defer func() {
-		if err := recover(); err != nil {
-		}
-	}()
-
-	// bootstrap
-	fixedNodes := []ToxNode{
-		ToxNode{Ipaddr: "37.48.122.22", Port: uint16(33445), Pubkey: "1B5A8AB25FFFB66620A531C4646B47F0F32B74C547B30AF8BD8266CA50A3AB59"},
-	}
-	var err error
-	for _, n := range fixedNodes {
-		_, err = this.Bootstrap(n.Ipaddr, n.Port, n.Pubkey)
-		_, err = this.AddTcpRelay(n.Ipaddr, n.Port, n.Pubkey)
-		break
-	}
-
-	return err
 }
 
 func CheckId(s string) bool {

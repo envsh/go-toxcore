@@ -4,11 +4,11 @@ set -x
 
 URL=https://nodes.tox.chat/json
 
-curl "$URL" > toxnodes_raw.json
+curl "$URL" > toxbsnodes_raw.json
 
-json_reformat < toxnodes_raw.json > toxnodes.json
+json_reformat < toxbsnodes_raw.json > toxbsnodes.json
 
-go-bindata -nocompress -pkg xtox -o toxnodes_assets.go toxnodes.json
+go-bindata -nocompress -pkg xtox -o toxbsnodes_assets.go toxbsnodes.json
 
 update_date=$(date +%Y%m%d)
 

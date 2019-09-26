@@ -1,12 +1,12 @@
 /*
-high level wrapper api for basic tox
+high level wrapper api for basic go-toxcore-c
 features:
 [x] auto select usable tcp port
 [x] auto reconnect if disconnected
 [x] auto context account info
 [x] auto save/load account info
 [x] auto bootstrap
-[ ] auto switch bootstrap nodes
+[x] auto switch bootstrap nodes
 [x] distinguish self created group and invited group
 [ ] record group inviter
 [ ] record invited group cookie
@@ -14,9 +14,12 @@ features:
 [ ] with text error message
 [x] duplicate store title info of groups
 [x] duplicate store peer info of groups
+
+if want change node list, use xtox.AddNode, xtox.DelNodeByPubkey, xtox.DelNodeByIPPort
 */
-// //go:generate ./getnodes.sh
 package xtox
+
+// //go:generate ./getbsnodes.sh
 
 /*
 #include <tox/tox.h>
@@ -57,32 +60,37 @@ func NewToxContext(SaveFile, NickName, StatusMessage string) *ToxContext {
 
 func New(ctx *ToxContext) *tox.Tox {
 	t, opts := tryNew(ctx)
-	if t != nil {
-		ctxmu.Lock()
-		defer ctxmu.Unlock()
-		xt := newXTox()
-		xt.opts = opts
-		xt.t = t
-		if ctx != nil {
-			xt.ctx = ctx
-		}
-		xt.Tox = t
-		xt.toxcore = (*C.Tox)(GetCTox(t))
-
-		// when current name is empty for force set
-		if t.SelfGetName() == "" || ctx.ForceSet == true {
-			t.SelfSetName(xt.ctx.NickName)
-			t.SelfSetStatusMessage(xt.ctx.StatusMessage)
-		}
-		err := t.WriteSavedata(xt.ctx.SaveFile)
-		if err != nil {
-			log.Println(err)
-		}
-		log.Println("ID:", t.SelfGetAddress())
-		xt.initCallbacks()
-		xt.initHooks()
-		ctxs[t] = xt
+	if t == nil {
+		return nil
 	}
+
+	ctxmu.Lock()
+	defer ctxmu.Unlock()
+	xt := newXTox()
+	xt.opts = opts
+	xt.t = t
+	if ctx != nil {
+		xt.ctx = ctx
+	}
+	xt.Tox = t
+	xt.toxcore = (*C.Tox)(GetCTox(t))
+
+	// when current name is empty for force set
+	if t.SelfGetName() == "" || ctx.ForceSet == true {
+		t.SelfSetName(xt.ctx.NickName)
+		t.SelfSetStatusMessage(xt.ctx.StatusMessage)
+	}
+	err := t.WriteSavedata(xt.ctx.SaveFile)
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println("ID:", t.SelfGetAddress())
+	xt.initCallbacks()
+	xt.initHooks()
+	ctxs[t] = xt
+	xt.retrywait = 3 * time.Second
+	time.AfterFunc(xt.retrywait, func() { xt.tryReconn() })
+
 	return t
 }
 
@@ -114,6 +122,7 @@ type _XTox struct {
 	groupTitles      *hashmap.Map     // uint32 => string, group number => group title
 	groupPeers       *hashmap.Map     // TODO uint32 => Map[uint32]*PeerInfo
 	needReconn       int32
+	retrywait        time.Duration
 }
 
 func tryNew(ctx *ToxContext) (*tox.Tox, *tox.ToxOptions) {
@@ -159,17 +168,25 @@ func (this *_XTox) tryReconn() {
 	t := this.t
 	status := t.SelfGetConnectionStatus()
 
-	if status == tox.CONNECTION_NONE {
+	if status > tox.CONNECTION_NONE {
+		atomic.CompareAndSwapInt32(&this.needReconn, 1, 0)
+	} else {
 		atomic.CompareAndSwapInt32(&this.needReconn, 0, 1)
-		time.AfterFunc(3*time.Second, func() {
+		if this.retrywait < 65*time.Second {
+			this.retrywait += time.Second
+		} else {
+			this.retrywait = 3 * time.Second // clycle
+		}
+		time.AfterFunc(this.retrywait, func() {
 			if atomic.LoadInt32(&this.needReconn) == 1 {
-				log.Println("Reconneting...")
-				Connect(t)
-				time.AfterFunc(4*time.Second, this.tryReconn)
+				log.Println("Reconneting...", this.retrywait)
+				err := SwitchServer(t, "")
+				if err != nil {
+					log.Println(err)
+				}
+				time.AfterFunc(this.retrywait, this.tryReconn)
 			}
 		})
-	} else {
-		atomic.CompareAndSwapInt32(&this.needReconn, 1, 0)
 	}
 }
 
@@ -348,6 +365,7 @@ type PeerInfo struct {
 
 type FriendInfo struct {
 	PeerInfo
+	Spamno        uint32
 	StatusMessage string
 	Status        uint32
 	LastSeen      uint32
@@ -358,3 +376,8 @@ type GroupInfo struct {
 	Ours  bool
 	Peers []PeerInfo
 }
+
+const (
+	LossyPktno    = 254
+	LosslessPktno = 191
+)
