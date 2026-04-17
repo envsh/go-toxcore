@@ -2,12 +2,14 @@ package xtox
 
 import (
 	"fmt"
-	"gopp"
 	"log"
 	"math"
 	"strings"
 	"sync"
 	"time"
+
+
+	gopp "github.com/kitech/goplusplus"
 
 	// tox "github.com/kitech/go-toxcore"
 	tox "github.com/TokTok/go-toxcore-c"

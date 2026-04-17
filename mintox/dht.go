@@ -3,13 +3,15 @@ package mintox
 import (
 	"bytes"
 	"encoding/binary"
-	"gopp"
 	"log"
 	"math"
 	"math/rand"
 	"net"
 	"time"
 	"unsafe"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 /* Maximum number of clients stored per friend. */

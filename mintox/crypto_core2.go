@@ -3,8 +3,9 @@ package mintox
 import (
 	"crypto/rand"
 	"fmt"
-	"gopp"
 	"unsafe"
+
+	gopp "github.com/kitech/goplusplus"
 
 	"github.com/kevinburke/nacl"
 	"github.com/kevinburke/nacl/box"

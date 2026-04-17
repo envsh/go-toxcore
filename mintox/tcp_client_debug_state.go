@@ -1,9 +1,11 @@
 package mintox
 
 import (
-	"gopp"
 	"log"
 	"time"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 type TcpClientDebugState struct {

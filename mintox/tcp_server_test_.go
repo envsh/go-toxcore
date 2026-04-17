@@ -3,9 +3,11 @@ package mintox
 import (
 	"crypto/sha256"
 	"fmt"
-	"gopp"
 	"log"
 	"time"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 var test_node_sks = []*CryptoKey{}

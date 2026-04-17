@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"gopp"
 	"io"
 	"log"
 	"math/rand"
@@ -17,6 +16,8 @@ import (
 	"unsafe"
 
 	rudp "mkuse/rudp2"
+
+	gopp "github.com/kitech/goplusplus"
 
 	"github.com/djherbis/buffer"
 	"github.com/goph/emperror"

@@ -2,8 +2,9 @@ package mintox
 
 import (
 	"encoding/hex"
-	"gopp"
 	"log"
+
+	gopp "github.com/kitech/goplusplus"
 
 	"github.com/GoKillers/libsodium-go/cryptobox"
 	"github.com/GoKillers/libsodium-go/randombytes"

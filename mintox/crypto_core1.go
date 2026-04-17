@@ -9,8 +9,9 @@ package mintox
 import "C"
 import (
 	"fmt"
-	"gopp"
 	"unsafe"
+
+	gopp "github.com/kitech/goplusplus"
 
 	// pure go: github.com/kevinburke/nacl
 	// pure go: github.com/ArteMisc/libgodium

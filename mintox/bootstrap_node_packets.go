@@ -2,8 +2,10 @@ package mintox
 
 import (
 	"encoding/binary"
-	"gopp"
 	"net"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 const MAX_MOTD_LENGTH = 256 /* I recommend you use a maximum of 96 bytes. The hard maximum is this though. */

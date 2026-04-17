@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"gopp"
 	"io"
 	"log"
 	"math/rand"
@@ -12,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	gopp "github.com/kitech/goplusplus"
 
 	"github.com/djherbis/buffer"
 	"github.com/pkg/errors"

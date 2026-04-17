@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/kitech/colog"
-	"github.com/kitech/go-toxcore/internal"
+	// "github.com/envsh/go-toxcore/internal"
 )
 
 func init() {

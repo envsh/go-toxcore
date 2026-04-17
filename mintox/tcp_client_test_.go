@@ -2,9 +2,10 @@ package mintox
 
 import (
 	"context"
-	"gopp"
 	"log"
 	"math/rand"
+
+	gopp "github.com/kitech/goplusplus"
 
 	"golang.org/x/time/rate"
 )

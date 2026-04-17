@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"gopp"
 	"log"
 	"net"
 	"time"
 	"unsafe"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 const ONION_ANNOUNCE_MAX_ENTRIES = 160

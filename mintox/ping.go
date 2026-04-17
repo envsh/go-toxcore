@@ -2,11 +2,13 @@ package mintox
 
 import (
 	"encoding/binary"
-	"gopp"
 	"log"
 	"math/rand"
 	"net"
 	"time"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 type Ping struct {

@@ -1,9 +1,11 @@
 package mintox
 
 import (
-	"gopp"
 	"net"
 	"time"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 /* Change symmetric keys every 2 hours to make paths expire eventually. */

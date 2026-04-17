@@ -2,10 +2,12 @@ package mintox
 
 import (
 	"encoding/binary"
-	"gopp"
 	"log"
 	"net"
 	"strings"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 func (this *DHT) sendnodes_ipv6(addr net.Addr, pubkey *CryptoKey, clientid *CryptoKey, sbdata []byte, shrkey *CryptoKey) int {

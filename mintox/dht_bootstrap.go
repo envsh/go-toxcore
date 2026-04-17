@@ -2,9 +2,11 @@ package mintox
 
 import (
 	"crypto/sha256"
-	"gopp"
 	"log"
 	"time"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 func MainBootstrapNode() {

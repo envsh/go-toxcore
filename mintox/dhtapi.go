@@ -1,10 +1,12 @@
 package mintox
 
 import (
-	"gopp"
 	"log"
 	"math/rand"
 	"net"
+
+	gopp "github.com/kitech/goplusplus"
+
 )
 
 // distinct from messager api

@@ -3,9 +3,12 @@ package mintox
 import (
 	"bytes"
 	"encoding/hex"
-	"gopp"
 	"strings"
 	"unsafe"
+
+
+	gopp "github.com/kitech/goplusplus"
+
 
 	// pure go: github.com/kevinburke/nacl
 	// pure go: github.com/ArteMisc/libgodium

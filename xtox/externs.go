@@ -4,11 +4,11 @@ import (
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
-	"gopp"
 	"math"
 	"strings"
 	"time"
 
+	gopp "github.com/kitech/goplusplus"
 	// tox "github.com/kitech/go-toxcore"
 	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/kitech/godsts/maps/hashmap"
