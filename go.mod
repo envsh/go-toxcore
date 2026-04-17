@@ -1,6 +1,12 @@
-module github.com/envsh/go-toxcore
+module github.com/envsh/toxera
 
 go 1.22.3
+
+// need go 1.25+
+// ignore (
+// 	./mintox
+// 	./intern
+// )
 
 // require mkuse/rudp2 v0.0.0
 // replace mkuse/rudp2 => /home/me/aprog/mkuse/rudp2
