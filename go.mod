@@ -1,8 +1,9 @@
 module github.com/envsh/go-toxcore
 
-go 1.22.3
+go 1.24.0
 
 require mkuse/rudp2 v0.0.0
+
 replace mkuse/rudp2 => /home/me/aprog/mkuse/rudp2
 
 require (
@@ -23,7 +24,7 @@ require (
 	github.com/tatsushid/go-fastping v0.0.0-20160109021039-d7bb493dee3e
 	github.com/thoas/go-funk v0.9.3
 	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342
-	golang.org/x/net v0.35.0
+	golang.org/x/net v0.47.0
 	golang.org/x/time v0.10.0
 )
 
@@ -35,6 +36,6 @@ require (
 	github.com/lytics/base62 v0.0.0-20180808010106-0ee4de5a5d6d // indirect
 	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
 	github.com/streamrail/concurrent-map v0.0.0-20160823150647-8bf1e9bacbf6 // indirect
-	golang.org/x/crypto v0.33.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 )
