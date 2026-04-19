@@ -10,6 +10,8 @@ import (
 
 )
 
+const MaxMsgLen = 999
+
 type BotMan struct {
 	// bots map[string]any // type => obj
 	bots []any // objs
