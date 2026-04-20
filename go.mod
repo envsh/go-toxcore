@@ -25,6 +25,7 @@ require (
 
 require (
 	github.com/Workiva/go-datastructures v1.1.7 // indirect
+	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/cheekybits/genny v1.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set v1.8.0 // indirect
@@ -33,7 +34,9 @@ require (
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/hashicorp/go-msgpack v0.5.5 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
+	github.com/juju/ratelimit v1.0.2 // indirect
 	github.com/kitech/gopp v0.0.0-20251111005519-20edd49cad44 // indirect
 	github.com/lytics/base62 v0.0.0-20180808010106-0ee4de5a5d6d // indirect
 	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
@@ -41,5 +44,6 @@ require (
 	github.com/sasha-s/go-deadlock v0.3.9 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/streamrail/concurrent-map v0.0.0-20160823150647-8bf1e9bacbf6 // indirect
+	go.uber.org/ratelimit v0.3.1 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 )
