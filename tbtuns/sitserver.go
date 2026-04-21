@@ -129,11 +129,12 @@ func (this *SitServer) doConn(pkto *tbcom.Packet, t *tox.Tox, friendNumber uint3
 	c, err := net.Dial("tcp", fmt.Sprintf("%s:%d", pkto.Host, pkto.Port))
 	gopp.ErrPrint(err)
 
-	cs := &ConnState{}
+	var cs *ConnState
 	rsperr := ""
 	if err != nil {
 		rsperr = err.Error()
 	} else {
+		cs = &ConnState{}
 		cs.cid = pkto.Conidc
 		cs.sid = atomic.AddUint64(&connid, 2)
 		cs.conned = true
@@ -149,11 +150,14 @@ func (this *SitServer) doConn(pkto *tbcom.Packet, t *tox.Tox, friendNumber uint3
 
 	}
 
-	gopp.Assert(cs.sid != 0, "")
 	pkto.Type = "ack"
 	pkto.Conidc = pkto.Conidc
-	pkto.Conids = cs.sid
 	pkto.Errmsg = rsperr
+	if cs != nil {
+		gopp.Assert(cs.sid != 0, "")
+		gopp.Assert(rsperr == "", rsperr)
+		pkto.Conids = cs.sid
+	}
 	bcc := pkto.ToMsgpack(161)
 	err = this.tra.Send(friendNumber, bcc)
 	// err = t.FriendSendLosslessPacket(friendNumber, bcc)

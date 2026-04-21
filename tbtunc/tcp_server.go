@@ -152,8 +152,8 @@ func serv_tcp_conn(c net.Conn) {
 	pkto.Type = "conn"
 	pkto.Data = []byte("dattt")
 	pkto.Conidc = cid
-	pkto.Host = "127.0.0.1"
-	pkto.Port = 9996
+	pkto.Host = gcfg.PeerHost // "127.0.0.1"
+	pkto.Port = gcfg.PeerPort // 9996
 
 	pkt1 = pkto.ToMsgpack(161)
 	if true {
