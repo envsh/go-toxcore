@@ -12,7 +12,7 @@ import (
 	_ "embed" // Blank import required for string/[]byte embedding
 
 	// "github.com/envsh/toxera/tbcom"
-	_ "github.com/envsh/toxera/tbtun"
+	_ "github.com/envsh/toxera/tbtunc"
 
 	// "github.com/kitech/gopp"
 	// "github.com/sirupsen/logrus"

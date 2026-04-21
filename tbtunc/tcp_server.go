@@ -1,4 +1,4 @@
-package tbtun
+package tbtunc
 
 import (
 	"net"
@@ -193,7 +193,6 @@ func serv_tcp_conn(c net.Conn) {
 		rn, err := c.Read(rdbuf)
 		gopp.ErrPrint(err, rn)
 		if err != nil { break }
-		log.Info(rn)
 
 		pkto3 := &tbcom.Packet{}
 		pkto3.Type = "data"
@@ -204,7 +203,7 @@ func serv_tcp_conn(c net.Conn) {
 
 		err = tra.Send(frid, scc)
 		gopp.ErrPrint(err, "send timeout", len(scc))
-		log.Info("xfer tcp -> toxnet", rn)
+		// log.Info("xfer tcp -> toxnet", rn)
 	}
 	log.Info("for done", c, cs.cid)
 	if cs.closes {
