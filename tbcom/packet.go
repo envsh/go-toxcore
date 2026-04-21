@@ -15,9 +15,26 @@ import (
 	// "https://github.com/vmihailenco/msgpack"
 )
 
+// packet format type
+const FT_MSGPACK = 1
+const FT_CAPN = 2
+const FT_BJSON = 3
+const FT_GOJSON = 4 // []byte to base64
+const FT_GOJSONV2 = 5 //
+
+var fttype = FT_MSGPACK
+
+func SetPacketFormat(fmttype int) int {
+	old := fttype
+	if fmttype>FT_MSGPACK&&fmttype<=FT_GOJSONV2 {
+		fttype = fmttype
+	}
+	return old
+}
+
 type Packet struct {
-	Conidc int
-	Conids int
+	Conidc uint64
+	Conids uint64
 	Type  string // conn,close,ack,data,error
 	Host   string
 	Port int
@@ -25,8 +42,9 @@ type Packet struct {
 	Errmsg string
 	Data []byte
 }
+// todo msgpack,capn,bjson,json
 
-func (p *Packet) ToMsgPack(pfx byte) string {
+func (p *Packet) ToMsgpack(pfx byte) string {
 	var mh codec.MsgpackHandle
 	mh.MapType = reflect.TypeOf(map[string]any(nil))
 	// mh.MapType = reflect.TypeOf(*p)
@@ -41,7 +59,7 @@ func (p *Packet) ToMsgPack(pfx byte) string {
 	return string([]byte{pfx}) + string(buf)
 }
 
-func (p *Packet) FromMsgPack(scc string) (byte, error) {
+func (p *Packet) FromMsgpack(scc string) (byte, error) {
 
 	var mh codec.MsgpackHandle
 	mh.MapType = reflect.TypeOf(map[string]any(nil))
@@ -60,6 +78,13 @@ func NewClosePacket() {
 func NewAckPacket() {
 }
 
+func (p *Packet) NewClosePacket() *Packet {
+	return &Packet{Type:"close", Conidc:p.Conidc, Conids:p.Conids}
+}
+func (p *Packet) NewAckPacket(sid uint64) *Packet{
+	return &Packet{Type:"ack", Conidc:p.Conidc, Conids:sid}
+}
+
 /////////////////
 
 const ConnTimeo = 5*time.Second
@@ -67,6 +92,7 @@ const WriteTimeo = 5*time.Second
 const ReadTimeo = 5*time.Second
 
 // send rated and timeouted over toxtp
+// global toxnet rate, not for per connection
 type ToxRated struct {
 	t *tox.Tox
 	bkt *ratelimit.Bucket

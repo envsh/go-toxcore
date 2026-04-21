@@ -8,8 +8,11 @@ import (
 	// "math/rand"
 	// "strconv"
 	// "strings"
-	// "time"
+	"time"
 	"net"
+	"errors"
+	"sync/atomic"
+	"sync"
 
 	// "github.com/envsh/go-toxcore-c"
 	"github.com/envsh/toxera/tbcom"
@@ -29,12 +32,15 @@ func init() {
 
 func newSitServer() *SitServer {
 	b := &SitServer{}
+
 	return b
 }
 type SitServer struct {
 	outpkgs []any
 
 	lsnport int // 2090
+
+	tra *tbcom.ToxRated
 }
 
 func (this *SitServer) OnSelfConnectionStatus(t *tox.Tox, status int, userData any) {
@@ -60,100 +66,49 @@ func (this *SitServer) OnFriendLosslessPacket(t *tox.Tox, friendNumber uint32, d
 	// if data
 
 	var pkto = &tbcom.Packet{}
-	_, err := pkto.FromMsgPack(data)
+	_, err := pkto.FromMsgpack(data)
 	gopp.ErrPrint(err, "broken packet", len(data))
 	if err != nil {
 		return
 	}
+	if this.tra == nil {
+		this.tra = tbcom.NewToxRated(t)
+	}
 
 	switch pkto.Type {
 	case "conn":
-
-		// connect to tunnel dest
-		// save conn meta info
-		// response ack
-
-		log.Println("connto ...", pkto.Host, pkto.Port)
-		c, err := net.Dial("tcp", fmt.Sprintf("%s:%d", pkto.Host, pkto.Port))
-		gopp.ErrPrint(err)
-
-		cs := &ConnState{}
-		rsperr := ""
-		if err != nil {
-			rsperr = err.Error()
-		} else {
-			cs.cid = pkto.Conidc
-			connid += 2
-			cs.sid = connid
-			cs.conned = true
-			cs.c = c
-			conns[pkto.Conidc] = cs
-			conns[cs.sid] = cs
-
-			log.Println("connected", pkto.Conidc, cs.sid, pkto.Host, pkto.Port)
-			tra := tbcom.NewToxRated(t)
-			go func(){
-				for {
-					// read socket, forward toxtp
-					var rdbuf = make([]byte, 999)
-					rn, err := c.Read(rdbuf)
-					gopp.ErrPrint(err, rn)
-					if err != nil { break }
-
-					// ratelimit send
-					pkto3 := &tbcom.Packet{}
-					pkto3.Type = "data"
-					pkto3.Conidc = pkto.Conidc
-					pkto3.Conids = cs.sid
-					pkto3.Data = rdbuf[:rn]
-					scc := pkto3.ToMsgPack(161)
-
-					err = tra.Send(friendNumber, scc)
-					gopp.ErrPrint(err)
-					// log.Info("xfer tcp -> toxnet", rn, err == nil)
-					if err != nil { break }
-
-				}
-				cs.closes = true
-				if true && !cs.closec {
-					pkto3 := &tbcom.Packet{}
-					pkto3.Type = "close"
-					pkto3.Conidc = pkto.Conidc
-					pkto3.Conids = cs.sid
-					// pkto3.Data = rdbuf[:rn]
-					scc := pkto3.ToMsgPack(161)
-
-					err = tra.Send(friendNumber, scc)
-					gopp.ErrPrint(err)
-				}
-			}()
-
-		}
-
-		gopp.Assert(cs.sid != 0, "")
-		pkto.Type = "ack"
-		pkto.Conidc = pkto.Conidc
-		pkto.Conids = cs.sid
-		pkto.Errmsg = rsperr
-		bcc := pkto.ToMsgPack(161)
-		err = t.FriendSendLosslessPacket(friendNumber, bcc)
-		gopp.ErrPrint(err)
+		go func() {
+			btime := time.Now()
+			cs, err := this.doConn(pkto, t, friendNumber)
+			gopp.ErrPrint(err)
+			if err != nil { return }
+			err = this.copyTcp2Tox(cs, t, friendNumber)
+			log.Info("conn done", cs.cid, cs.sid, time.Since(btime).String())
+		}()
 
 	case "close":
 		// close assoc tcp socket
 		log.Println("closed by client", pkto.Conidc, pkto.Conids)
+		connsmu.Lock()
 		cs, ok := conns[pkto.Conids]
+		connsmu.Unlock()
+
 		if !ok {
 			log.Error("not found", pkto.Conids)
 		} else {
 			cs.closec = true
+			connsmu.Lock()
 			delete(conns, pkto.Conids)
 			delete(conns, cs.cid)
+			connsmu.Unlock()
 			cs.c.Close()
 		}
 	case "data":
 		// forward to connected tcp socket
+		connsmu.Lock()
 		cs, ok := conns[pkto.Conids]
+		connsmu.Unlock()
+
 		if !ok {
 			log.Error("not found", *pkto)
 		} else {
@@ -165,12 +120,109 @@ func (this *SitServer) OnFriendLosslessPacket(t *tox.Tox, friendNumber uint32, d
 	}
 }
 
-var connid = 8 // step 2 and %2==0
-var conns = make(map[int]*ConnState)
+func (this *SitServer) doConn(pkto *tbcom.Packet, t *tox.Tox, friendNumber uint32) (*ConnState, error) {
+	// connect to tunnel dest
+	// save conn meta info
+	// response ack
+
+	log.Println("connto ...", pkto.Host, pkto.Port)
+	c, err := net.Dial("tcp", fmt.Sprintf("%s:%d", pkto.Host, pkto.Port))
+	gopp.ErrPrint(err)
+
+	cs := &ConnState{}
+	rsperr := ""
+	if err != nil {
+		rsperr = err.Error()
+	} else {
+		cs.cid = pkto.Conidc
+		cs.sid = atomic.AddUint64(&connid, 2)
+		cs.conned = true
+		cs.c = c
+
+		connsmu.Lock()
+		conns[pkto.Conidc] = cs
+		conns[cs.sid] = cs
+		connsmu.Unlock()
+
+		log.Println("connected", pkto.Conidc, cs.sid, pkto.Host, pkto.Port)
+		// go this.copyTcp2Tox(cs, t, friendNumber)
+
+	}
+
+	gopp.Assert(cs.sid != 0, "")
+	pkto.Type = "ack"
+	pkto.Conidc = pkto.Conidc
+	pkto.Conids = cs.sid
+	pkto.Errmsg = rsperr
+	bcc := pkto.ToMsgpack(161)
+	err = this.tra.Send(friendNumber, bcc)
+	// err = t.FriendSendLosslessPacket(friendNumber, bcc)
+	gopp.ErrPrint(err)
+
+	if rsperr != "" {
+		return nil, errors.New(rsperr)
+	} else {
+		return cs, nil
+	}
+}
+
+func (this *SitServer) copyTcp2Tox(cs *ConnState, t *tox.Tox, friendNumber uint32) error {
+	var tra = this.tra
+	var c = cs.c
+	var err error
+	for {
+		// read socket, forward toxtp
+		var rdbuf = make([]byte, 999)
+		rn, err := c.Read(rdbuf)
+		gopp.ErrPrint(err, rn)
+		if err != nil { break }
+
+		// ratelimit send
+		pkto3 := &tbcom.Packet{}
+		pkto3.Type = "data"
+		pkto3.Conidc = cs.cid
+		pkto3.Conids = cs.sid
+		pkto3.Data = rdbuf[:rn]
+		scc := pkto3.ToMsgpack(161)
+
+		err = tra.Send(friendNumber, scc)
+		gopp.ErrPrint(err)
+		// log.Info("xfer tcp -> toxnet", rn, err == nil)
+		if err != nil { break }
+
+	}
+	cs.closes = true
+	if true && !cs.closec {
+		pkto3 := &tbcom.Packet{}
+		pkto3.Type = "close"
+		pkto3.Conidc = cs.cid
+		pkto3.Conids = cs.sid
+		// pkto3.Data = rdbuf[:rn]
+		scc := pkto3.ToMsgpack(161)
+
+		err = tra.Send(friendNumber, scc)
+		gopp.ErrPrint(err)
+	}
+
+	return nil
+}
+
+/////////////
+
+type TcpWriter struct {
+	t      *tox.Tox
+	frnum  uint32
+}
+
+/////////////
+
+var connid uint64 = 8 // step 2 and %2==0
+var conns = make(map[uint64]*ConnState)
+var connsmu = sync.RWMutex{}
 
 type ConnState struct {
-	cid  int // %2 == 1
-	sid  int // %2 == 0
+	cid  uint64 // %2 == 1
+	sid  uint64 // %2 == 0
 	c   net.Conn
 	// ch chan *tbcom.Packet
 	conned bool
