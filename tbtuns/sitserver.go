@@ -125,6 +125,11 @@ func (this *SitServer) doConn(pkto *tbcom.Packet, t *tox.Tox, friendNumber uint3
 	// save conn meta info
 	// response ack
 
+	var err error
+	if pkto.Conidc % 2 != 1 {
+		log.Println("Invalid Conidc", pkto.Conidc)
+		err = errors.New(fmt.Sprintf("Invalid Condic %v", pkto.Conidc))
+	}
 	log.Println("connto ...", pkto.Host, pkto.Port)
 	c, err := net.Dial("tcp", fmt.Sprintf("%s:%d", pkto.Host, pkto.Port))
 	gopp.ErrPrint(err)
@@ -150,8 +155,8 @@ func (this *SitServer) doConn(pkto *tbcom.Packet, t *tox.Tox, friendNumber uint3
 
 	}
 
+	// reuse pkto
 	pkto.Type = "ack"
-	pkto.Conidc = pkto.Conidc
 	pkto.Errmsg = rsperr
 	if cs != nil {
 		gopp.Assert(cs.sid != 0, "")

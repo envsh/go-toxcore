@@ -116,8 +116,19 @@ func run_tcp_server() {
 	}
 }
 
-var connid uint64 = 9
+var connid uint64 = 9 // step 2
 var connings = make(map[uint64]*ConnState)
+var	tptra *tbcom.ToxRated // := tbcom.NewToxRated(t)
+
+
+func newConnState(cid uint64, c net.Conn) *ConnState {
+	ch := make(chan *tbcom.Packet, 8)
+	cs := &ConnState{}
+	cs.cid = cid
+	cs.c = c
+	cs.ch = ch
+	return cs
+}
 
 type ConnState struct {
 	cid  uint64
@@ -126,7 +137,16 @@ type ConnState struct {
 	conned bool
 	closec bool
 	closes bool
+
+	//
+	dlsize int64
+	upsize int64
 }
+
+var gstats = struct {
+	dlsize int64
+	upsize int64
+}{}
 
 func serv_tcp_conn(c net.Conn) {
 	var peerid = gcfg.Peerid
@@ -138,10 +158,15 @@ func serv_tcp_conn(c net.Conn) {
 		log.Println("toxobj nil")
 		return
 	}
+	if tptra == nil {
+		tptra = tbcom.NewToxRated(t)
+	}
+	gopp.Assert(tptra != nil, "tptra nil")
+	var tra = tptra
 
 	cid := atomic.AddUint64(&connid, 2)
-	ch := make(chan *tbcom.Packet, 128)
-	cs := &ConnState{cid, c, ch, false, false, false}
+	// cs := &ConnState{cid, c, ch, false, false, false, 0, 0}
+	cs := newConnState(cid, c)
 	connings[cid] = cs
 
 	frid, err := t.FriendByPublicKey(peerid)
@@ -162,13 +187,18 @@ func serv_tcp_conn(c net.Conn) {
 		log.Info(*pkto2, p2, err, *pkto)
 	}
 	log.Info("sending", len(pkt1), pkt1)
-	err = t.FriendSendLosslessPacket(frid, pkt1)
+	// err = t.FriendSendLosslessPacket(frid, pkt1)
+	err = tra.Send(frid, pkt1)
 	gopp.ErrPrint(err, frid)
+	if err != nil {
+		return
+	}
 
 	// if recv handshake then goon
+	var connbtime = time.Now()
 	var ackpkt *tbcom.Packet
 	select {
-	case rpkt := <- ch:
+	case rpkt := <- cs.ch:
 		log.Println("conned", rpkt)
 		if rpkt == nil {
 			return
@@ -181,13 +211,12 @@ func serv_tcp_conn(c net.Conn) {
 		}
 		ackpkt = rpkt
 		cs.conned = true
-	case <- time.After(5*time.Second):
-		log.Warn("timeout...", cs.cid)
+	case <- time.After(8*time.Second):
+		log.Warn("timeout...", cs.cid, time.Since(connbtime))
 		delete(connings, cid)
 		return
 	}
 
-	tra := tbcom.NewToxRated(t)
 	var rdbuf = make([]byte, 999)
 	for {
 		rn, err := c.Read(rdbuf)
@@ -204,6 +233,8 @@ func serv_tcp_conn(c net.Conn) {
 		err = tra.Send(frid, scc)
 		gopp.ErrPrint(err, "send timeout", len(scc))
 		// log.Info("xfer tcp -> toxnet", rn)
+		cs.upsize += int64(len(scc))
+		gstats.upsize += int64(len(scc))
 	}
 	log.Info("for done", c, cs.cid)
 	if cs.closes {
@@ -223,7 +254,7 @@ func serv_tcp_conn(c net.Conn) {
 		gopp.ErrPrint(err)
 	}
 
-	log.Info("func done", c, cs.cid)
+	log.Info("func done", c, cs.cid, "dl", cs.dlsize, "up", cs.upsize)
 }
 
 func onIncomingPacket(scc string) {

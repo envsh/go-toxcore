@@ -117,7 +117,7 @@ func (tra *ToxRated) Send(frid uint32, data string) error {
 		err = t.FriendSendLosslessPacket(frid, data)
 		// gopp.ErrPrint(err, frid, "retry")
 		if err == nil { break }
-		time.Sleep(233*time.Millisecond)
+		time.Sleep(333*time.Millisecond)
 	}
 	gopp.ErrPrint(err, frid, "retry", retry)
 	return err

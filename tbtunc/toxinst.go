@@ -76,6 +76,7 @@ func toxecho_main() {
 			opt.Savedata_type = tox.SAVEDATA_TYPE_TOX_SAVE
 		}
 	}
+	opt.Udp_enabled = true
 	opt.Tcp_port = 33445
 	var t *tox.Tox
 	for i := 0; i < 5; i++ {
@@ -88,11 +89,16 @@ func toxecho_main() {
 	}
 	log.Println(opt.Tcp_port, t)
 	gtox = t
+	var err error
 
-	r, err := t.Bootstrap(server[0].(string), server[1].(uint16), server[2].(string))
-	r2, err := t.AddTcpRelay(server[0].(string), server[1].(uint16), server[2].(string))
-	if tbdebug {
-		log.Println("bootstrap:", r, err, r2)
+	for i := 0; i < len(server); i += 3 {
+		ip, port, pkey := server[i].(string), server[i+1].(uint16), server[i+2].(string)
+		// r := 0
+		r, err := t.Bootstrap(ip, port, pkey)
+		r2, err := t.AddTcpRelay(ip, port, pkey)
+		if tbdebug {
+			log.Println("bootstrap:", r, err, r2)
+		}
 	}
 
 	pubkey := t.SelfGetPublicKey()

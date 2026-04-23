@@ -99,6 +99,9 @@ func (this *SitClient) OnFriendLosslessPacket(t *tox.Tox, frnum uint32, data str
 		wn, err := c.Write(pkto.Data)
 		gopp.ErrPrint(err, wn)
 		// log.Info("xfer toxnet -> tcp", wn, len(data))
+
+		connst.dlsize += int64(wn)
+		gstats.dlsize += int64(wn)
 	}
 
 }
