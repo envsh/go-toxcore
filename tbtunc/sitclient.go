@@ -76,15 +76,17 @@ func (this *SitClient) OnFriendLosslessPacket(t *tox.Tox, frnum uint32, data str
 	// 	bcc := pkto.ToMsgPack(161)
 	// 	err = t.FriendSendLosslessPacket(friendNumber, bcc)
 	// 	gopp.ErrPrint(err)
+
 	case "ack":
-		log.Println("conn acked", pkto.Conidc, pkto.Conids)
+		log.Println("<< conn acked", pkto.Conidc, pkto.Conids)
 
 		if connok {
 			connst.ch <- pkto
 		} else {
-			log.Println("maybe timeout")
+			log.Println("maybe timeout", pkto.Conidc, pkto.Conids)
 		}
 	case "close":
+		log.Println("<< close pkt", pkto.Conidc, pkto.Conids)
 		if !connok { break }
 
 		delete(connings, pkto.Conidc)
@@ -102,6 +104,9 @@ func (this *SitClient) OnFriendLosslessPacket(t *tox.Tox, frnum uint32, data str
 
 		connst.dlsize += int64(wn)
 		gstats.dlsize += int64(wn)
+
+	default:
+		log.Println("wtt", pkto.Type)
 	}
 
 }

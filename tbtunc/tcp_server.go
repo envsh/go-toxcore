@@ -111,7 +111,7 @@ func run_tcp_server() {
 	for {
 		c, err := lsner.Accept()
 		gopp.ErrPrint(err, c)
-		log.Println(c)
+		log.Println("accepted tcp", c)
 		go serv_tcp_conn(c)
 	}
 }
