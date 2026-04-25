@@ -127,6 +127,8 @@ func newConnState(cid uint64, c net.Conn) *ConnState {
 	cs.cid = cid
 	cs.c = c
 	cs.ch = ch
+
+	cs.lastRecvTM = time.Now()
 	return cs
 }
 
@@ -134,11 +136,13 @@ type ConnState struct {
 	cid  uint64
 	c   net.Conn
 	ch chan *tbcom.Packet
+	transportid string // WIP toxid now
 	conned bool
 	closec bool
 	closes bool
 
 	//
+	lastRecvTM  time.Time
 	dlsize int64
 	upsize int64
 }
@@ -186,7 +190,7 @@ func serv_tcp_conn(c net.Conn) {
 		p2, err := pkto2.FromMsgpack(pkt1)
 		log.Info(*pkto2, p2, err, *pkto)
 	}
-	log.Info("sending", len(pkt1), pkt1)
+	log.Info("sending ...", len(pkt1))
 	// err = t.FriendSendLosslessPacket(frid, pkt1)
 	err = tra.Send(frid, pkt1)
 	gopp.ErrPrint(err, frid)
@@ -211,12 +215,33 @@ func serv_tcp_conn(c net.Conn) {
 		}
 		ackpkt = rpkt
 		cs.conned = true
-	case <- time.After(8*time.Second):
-		log.Warn("timeout...", cs.cid, time.Since(connbtime))
+	case <- time.After(9*time.Second):
+		log.Warn("conn timeout...", cs.cid, time.Since(connbtime))
 		delete(connings, cid)
 		return
 	}
 
+	// check recv timeout
+	go func() {
+		for {
+			time.Sleep(3*time.Second)
+			dur := time.Since(cs.lastRecvTM)
+			if dur < tbcom.ReadTimeo {
+				continue
+			}
+			log.Warn("== read timeout", cs.cid, cs.closec, cs.closes, dur)
+			if (cs.closec || cs.closes) { break }
+			if dur > tbcom.ReadTimeo*2/3 {
+				// think it as closed
+				if !cs.closec {
+					cs.c.Close()
+				}
+				break
+			}
+		}
+	}()
+
+	// read tcp
 	var rdbuf = make([]byte, 999)
 	for {
 		rn, err := c.Read(rdbuf)
@@ -237,6 +262,7 @@ func serv_tcp_conn(c net.Conn) {
 		gstats.upsize += int64(len(scc))
 	}
 	log.Info("for done", c, cs.cid)
+
 	if cs.closes {
 	} else {
 		cs.closec = true

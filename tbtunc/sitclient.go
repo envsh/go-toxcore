@@ -8,7 +8,7 @@ import (
 	// "math/rand"
 	// "strconv"
 	// "strings"
-	// "time"
+	"time"
 
 	// "github.com/envsh/go-toxcore-c"
 	"github.com/envsh/toxera/tbcom"
@@ -68,6 +68,8 @@ func (this *SitClient) OnFriendLosslessPacket(t *tox.Tox, frnum uint32, data str
 	if !connok {
 		log.Warn("not found", pkto.Conidc)
 		// return
+	} else {
+		connst.lastRecvTM = time.Now()
 	}
 
 	switch pkto.Type {

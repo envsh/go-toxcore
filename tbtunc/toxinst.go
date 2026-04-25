@@ -111,6 +111,7 @@ func (this *ToxInst) Initilize() error {
 	err = this.setupMyinfos()
 	if err != nil { return err }
 
+	// if true { log.Fatal("ttt") }
 	err = this.bootstrapFriends()
 	if err != nil { return err }
 
@@ -126,12 +127,14 @@ func (this *ToxInst) Initilize() error {
 	return err
 }
 func (this *ToxInst) loadAccountData() error {
-	if this.opts.Savedata_data != nil {
+	opts := this.opts
+	if opts.Savedata_data != nil {
 		return nil
 	}
 
-	opt := this.opts.ToxOptions
-	toxdata_path := this.opts.ToxsaveFile
+	opt := &opts.ToxOptions
+	toxdata_path := opts.ToxsaveFile
+	log.Debug("loading ...", toxdata_path)
 	if tox.FileExist(toxdata_path) {
 		data, err := ioutil.ReadFile(toxdata_path)
 		if err != nil {
