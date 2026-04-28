@@ -147,12 +147,100 @@ pub fn (t &Tox) self_address() Address {
     return Address.fromc(buf)
 }
 
+pub fn (t &Tox) friend_add(addr Address, msg string) !FriendNumber {
+    errcode := 0
+    fnum := u32(0)
+    errmsgc := charptr(0)
+    addrc := addr.toc()
+    c99 {
+        fnum = tox_friend_add(t, addrc.str, msg.str, msg.len, &errcode);
+        errmsgc = tox_err_friend_add_to_string(errcode);
+    }
+    if errcode == 0 { return fnum }
+
+    return errorwc(errmsgc.tosref(), errcode)
+}
+pub fn (t &Tox) friend_add_norequest(addr Address) !FriendNumber {
+    errcode := 0
+    fnum := u32(0)
+    errmsgc := charptr(0)
+    addrc := addr.toc()
+    c99 {
+        fnum = tox_friend_add_norequest(t, addrc.str, &errcode);
+        errmsgc = tox_err_friend_add_to_string(errcode);
+    }
+    if errcode == 0 { return fnum }
+
+    return errorwc(errmsgc.tosref(), errcode)
+}
+
+pub fn (t &Tox) friend_bypk(addr Address) !FriendNumber {
+    errcode := 0
+    fnum := u32(0)
+    errmsgc := charptr(0)
+    addrc := addr.toc()
+    c99 {
+        fnum = tox_friend_by_public_key(t, addrc.str, &errcode);
+        errmsgc = tox_err_friend_by_public_key_to_string(errcode);
+    }
+    if errcode == 0 { return fnum }
+
+    return errorwc(errmsgc.tosref(), errcode)
+}
+pub fn (t &Tox) friend_delete(fid FriendId) ! {
+    fnum := fid.tonum(t) !
+
+    errcode := 0
+    errmsgc := charptr(0)
+    c99 {
+        fnum = tox_friend_delete(t, fnum, &errcode);
+        errmsgc = tox_err_friend_delete_to_string(errcode);
+    }
+    if errcode == 0 { return }
+
+    return errorwc(errmsgc.tosref(), errcode)
+}
+pub fn (t &Tox) friend_exists(fid FriendId) bool {
+    c99 {
+        int rv = tox_friend_exists(t, addrc.data);
+        return rv;
+    }
+    return false
+}
+pub fn (t &Tox) friend_last_online(fid FriendId) !u64 {
+    fnum := fid.tonum(t) !
+
+    errcode := 0
+    errmsgc := charptr(0)
+    ret := u64(0)
+    c99 {
+        ret = tox_friend_get_last_online(t, fnum, &errcode);
+        errmsgc = tox_err_friend_get_last_online_to_string(errcode);
+    }
+    if errcode == 0 { return ret }
+
+    return errorwc(errmsgc.tosref(), errcode)
+}
+
+pub fn (fid FriendId) tonum(t &Tox) !FriendNumber {
+    fnum := u32(0)
+    match fid {
+        FriendNumber { fnum = fid }
+        u32 { fnum = fid }
+        string { fnum = t.friend_bypk(fid) ! }
+    }
+    return fnum
+}
+
 //////
+pub type FriendId = string | u32 | FriendNumber
+
 pub type Address = string
 pub type PublicKey = string
 pub type SecretKey = string
 pub type DhtId = string
 pub type FileId = string
+pub type FriendNumber = u32
 
 pub enum SavedataType {
     none = C.TOX_SAVEDATA_TYPE_NONE
@@ -201,6 +289,7 @@ pub struct Callbacks {
 }
 
 fn on_friend_request(t &Tox) {
+    dump(@FN)
     for _, cbfn in cbfns.friend_requests {
     }
 }
@@ -217,6 +306,7 @@ pub fn (t &Tox) on_friend_request(cbfn voidptr) {
 fn C.tox_callback_friend_request(...voidptr)
 
 fn on_friend_message(t &Tox) {
+    dump(@FN)
     for _, cbfn in cbfns.friend_messages {
     }
 }

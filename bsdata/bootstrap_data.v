@@ -1,33 +1,31 @@
 module bsdata
 
 import json
+import toml
+import toml.to
+import v.embed_file
 
-fn init() {
-   // jcc := $embed_file("./bootstrap.json")
+fn init() {}
+
+fn load_data() &BootstrapData {
+    doc := toml.parse_text(data_toml.to_string()) or { panic(err) }
+    jcc := to.json(doc)
+    dato := json.decode(BootstrapData, jcc) or { panic(err) }
+    // dump(dato) //
+    // vmemcpy(d, &dato, sizeof(dato))
+    return &dato
 }
 
-
-// from https://github.com/TokTok/qTox
-const group_bot = "648BF2EEE794E94444B848F8FC6AD3BA029C9BC2649BA761EF556DA17F549022A8D7596E7DBA"
-
-// WIP maybe change !!!
-// runby envsh/fedind https://github.com/envsh/fedind/releases/tag/cloudappfs
-const echo_bots = [
-	// vercel new
-	"BDC903530CA703EEFF078612835D150EE174BD4C3CEC682525AEF2816F20CB4E9F69B4D90E95",
-	// edgeone
-	"3A7557F38C3CFCE1FDC94A7D186E9911A310D5ACFC0018B36F3C97B209021527128148DD0768",
-	// onrender
-	"83F090EAF802AFB7FCD21822111A05A9A1C713F97A5FBC9726AD60A116910A6519EC31AFB2A1",
-	// envsnet
-	"6C759F9E015BA8E78FBCB0B9B82DCC4E530FF02DA40D41FF84A7F16C3206A947E41913184E6A",
-	// snapdeparm
-	"8D6B5552B84A42443DAE9BA7E65E187259AAD09AD93FDEAC895818CD81F53F043A0099CF781A",
-	// local
-	"9A8FB4515BAD255AD1D5552A3F647C6447D7FE0CF97A94A28097C9DCB49637665E328FDA5886",
-]
-
-const toxme_bots = []string {
+const data_toml = $embed_file("bootstrap_data.toml")
+pub const d = load_data() // &BootstrapData{}
+pub struct BootstrapData {
+    pub:
+    group_bots []string
+    echo_bots  []string
+    toxme_bots []string
+    ngc_groups []string
+    rdbs_nodes  []BSNode
+    full_nodes  []BSNode
 }
 
 // some rand nodes from https://nodes.tox.chat/
@@ -38,11 +36,3 @@ pub struct BSNode {
 	pubkey string
 	motd   string
 }
-const bsnodes = [
-	BSNode{"104.225.141.59", [u16(33445)], "933BA20B2E258B4C0D475B6DECE90C7E827FE83EFA9655414E7841251B19A72C", ""},
-	BSNode{"43.198.227.166", [u16(3389)], "AD13AB0D434BCE6C83FE2649237183964AE3341D0AFB3BE1694B18505E4E135E", ""},
-	BSNode{ "3.0.24.15", [u16(33445)], "E20ABCF38CDBFFD7D04B29C956B33F7B27A3BB7AF0618101617B036E4AEA402D", ""},
-]
-
-
-// https://nodes.tox.chat/json

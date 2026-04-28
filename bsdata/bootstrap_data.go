@@ -2,6 +2,13 @@ package bsdata
 
 import _ "embed"
 
+func init() {}
+
+func load_data() {}
+
+//go:embed bootstrap_data.toml
+var data_toml []byte
+
 // from https://github.com/TokTok/qTox
 var GroupBot = "648BF2EEE794E94444B848F8FC6AD3BA029C9BC2649BA761EF556DA17F549022A8D7596E7DBA"
 

@@ -39,13 +39,13 @@ fn test_2() {
 
 fn test_bootstrap() {
     t := tox.new(nil)
-    n := bsdata.bsnodes[0]
-    dump('booting $n')
+    n := bsdata.d.rdbs_nodes[0]
+    dump('booting $n ...')
     t.bootstrap(n.host, n.ports[0], n.pubkey) or { panic(err) }
     t.add_tcp_relay(n.host, n.ports[0], n.pubkey) or { panic(err) }
 
     // online test
-    for i in 0..200 {
+    for i in 0..20 {
         t.iterate()
         // dump(t.self_conn_status())
         if t.self_conn_status() != .none {
