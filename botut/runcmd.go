@@ -11,7 +11,7 @@ import (
 )
 
 var cmdpfx = "!cmd"
-var cmdflts = strings.Fields("top iotop ping")
+var cmdflts = strings.Fields("top iotop") // ping -c
 var maxrsplen = 999 // 1372
 
 // eg. !cmd which ls

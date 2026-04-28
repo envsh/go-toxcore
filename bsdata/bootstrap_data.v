@@ -1,13 +1,18 @@
-package bsdata
+module bsdata
 
-import _ "embed"
+import json
+
+fn init() {
+   // jcc := $embed_file("./bootstrap.json")
+}
+
 
 // from https://github.com/TokTok/qTox
-var GroupBot = "648BF2EEE794E94444B848F8FC6AD3BA029C9BC2649BA761EF556DA17F549022A8D7596E7DBA"
+const group_bot = "648BF2EEE794E94444B848F8FC6AD3BA029C9BC2649BA761EF556DA17F549022A8D7596E7DBA"
 
 // WIP maybe change !!!
 // runby envsh/fedind https://github.com/envsh/fedind/releases/tag/cloudappfs
-var EchoBots = []string{
+const echo_bots = [
 	// vercel new
 	"BDC903530CA703EEFF078612835D150EE174BD4C3CEC682525AEF2816F20CB4E9F69B4D90E95",
 	// edgeone
@@ -20,23 +25,24 @@ var EchoBots = []string{
 	"8D6B5552B84A42443DAE9BA7E65E187259AAD09AD93FDEAC895818CD81F53F043A0099CF781A",
 	// local
 	"9A8FB4515BAD255AD1D5552A3F647C6447D7FE0CF97A94A28097C9DCB49637665E328FDA5886",
-}
+]
 
-var ToxmeBots = []string {
+const toxme_bots = []string {
 }
 
 // some rand nodes from https://nodes.tox.chat/
-type BSNode struct {
-	Host string
-	Ports []uint16
-	Pubkey string
-	Motd   string
+pub struct BSNode {
+    pub:
+	host string
+	ports []u16
+	pubkey string
+	motd   string
 }
-var BSNodes = []BSNode {
-	BSNode{"104.225.141.59", []uint16{33445}, "933BA20B2E258B4C0D475B6DECE90C7E827FE83EFA9655414E7841251B19A72C", ""},
-		BSNode{"43.198.227.166", []uint16{3389}, "AD13AB0D434BCE6C83FE2649237183964AE3341D0AFB3BE1694B18505E4E135E", ""},
-		BSNode{ "3.0.24.15", []uint16{33445}, "E20ABCF38CDBFFD7D04B29C956B33F7B27A3BB7AF0618101617B036E4AEA402D", ""},
-}
+const bsnodes = [
+	BSNode{"104.225.141.59", [u16(33445)], "933BA20B2E258B4C0D475B6DECE90C7E827FE83EFA9655414E7841251B19A72C", ""},
+	BSNode{"43.198.227.166", [u16(3389)], "AD13AB0D434BCE6C83FE2649237183964AE3341D0AFB3BE1694B18505E4E135E", ""},
+	BSNode{ "3.0.24.15", [u16(33445)], "E20ABCF38CDBFFD7D04B29C956B33F7B27A3BB7AF0618101617B036E4AEA402D", ""},
+]
 
 
 // https://nodes.tox.chat/json
